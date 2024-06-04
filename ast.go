@@ -49,7 +49,6 @@ func (p *Program) Accept(visitor Visitor) Object {
 	return visitor.VisitProgram(p)
 }
 
-// Everything other than return statement
 type ExpressionStatement struct {
 	Token      Token
 	Expression Expression
@@ -64,6 +63,32 @@ func (es *ExpressionStatement) TokenLiteral() string {
 }
 func (es *ExpressionStatement) Accept(visitor Visitor) Object {
 	return visitor.VisitExpressionStatement(es)
+}
+
+type VarStatement struct {
+	Token      Token
+	Identifier *Identifier
+	Expression Expression
+}
+
+func (vs *VarStatement) statementNode() {}
+func (vs *VarStatement) String() string {
+	var str strings.Builder
+
+	str.WriteString(vs.TokenLiteral() + " ")
+	str.WriteString(vs.Identifier.String() + " = ")
+
+	if vs.Expression != nil {
+		str.WriteString(vs.Expression.String())
+	}
+
+	return str.String()
+}
+func (vs *VarStatement) TokenLiteral() string {
+	return vs.Token.Lexeme
+}
+func (vs *VarStatement) Accept(visitor Visitor) Object {
+	return visitor.VisitVarStatement(vs)
 }
 
 type BlockStatement struct {
@@ -189,7 +214,7 @@ func (te *TernaryExpression) Accept(visitor Visitor) Object {
 type Assignment struct {
 	Token      Token
 	Identifier Identifier
-	Right      Expression
+	Expression Expression
 }
 
 func (a *Assignment) expressionNode() {}
@@ -201,7 +226,7 @@ func (a *Assignment) String() string {
 
 	str.WriteString(a.Identifier.String())
 	str.WriteString(" = ")
-	str.WriteString(a.Right.String())
+	str.WriteString(a.Expression.String())
 
 	return str.String()
 }

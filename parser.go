@@ -67,7 +67,7 @@ func (p *Parser) parse() *Program {
 	stmts := make([]Statement, 0)
 
 	for !p.isAtEnd() {
-		stmt := p.statement()
+		stmt := p.declaration()
 		if stmt != nil {
 			stmts = append(stmts, stmt)
 		} else {
@@ -77,6 +77,15 @@ func (p *Parser) parse() *Program {
 	}
 	program.Statements = stmts
 	return program
+}
+
+func (p *Parser) declaration() Statement {
+	switch p.peek().Type {
+	case VAR:
+		return p.varDeclaration()
+	default:
+		return p.statement()
+	}
 }
 
 func (p *Parser) statement() Statement {
@@ -90,27 +99,44 @@ func (p *Parser) statement() Statement {
 	}
 }
 
-func (p *Parser) printStatement() Statement {
-	stmt := &PrintStatement{Token: p.peek()}
+func (p *Parser) varDeclaration() Statement {
+	stmt := &VarStatement{Token: p.advance()}
 
-	p.advance()
+	if !p.expectPeek(IDENTIFIER) {
+		return nil
+	}
+
+	stmt.Identifier = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+
+	if !p.expectPeek(EQUAL) {
+		return nil
+	}
+
+	stmt.Expression = p.expression()
+
+	if !p.expectPeek(SEMICOLON) {
+		return nil
+	}
+	return stmt
+}
+
+func (p *Parser) printStatement() Statement {
+	stmt := &PrintStatement{Token: p.advance()}
 
 	stmt.PrintValue = p.expression()
 
-	if !p.consume(SEMICOLON) {
+	if !p.expectPeek(SEMICOLON) {
 		return nil
 	}
 	return stmt
 }
 
 func (p *Parser) returnStatement() Statement {
-	stmt := &ReturnStatement{Token: p.peek()}
-
-	p.advance()
+	stmt := &ReturnStatement{Token: p.advance()}
 
 	stmt.ReturnValue = p.expression()
 
-	if !p.consume(SEMICOLON) {
+	if !p.expectPeek(SEMICOLON) {
 		return nil
 	}
 	return stmt
@@ -121,21 +147,21 @@ func (p *Parser) expressionStatement() Statement {
 
 	stmt.Expression = p.expression()
 
-	if !p.consume(SEMICOLON) {
+	if !p.expectPeek(SEMICOLON) {
 		return nil
 	}
 	return stmt
 }
 
-func (p *Parser) consume(tokenType TokenType) bool {
+func (p *Parser) expectPeek(tokenType TokenType) bool {
 	if !p.check(tokenType) {
 		err := &Error{Message: fmt.Sprintf("Expect peek to be %s, got=%s", tokenType, p.peek().Type), Line: p.peek().Line}
 		p.addError(err)
 		return false
-	} else {
-		p.advance()
-		return true
 	}
+
+	p.advance()
+	return true
 }
 
 // Discard tokens until we're right at the beginning of the next statement
@@ -180,7 +206,7 @@ func (p *Parser) primary() Expression {
 	}
 	if p.match(LEFT_PAREN) {
 		expr := p.expression()
-		if p.consume(RIGHT_PAREN) {
+		if p.expectPeek(RIGHT_PAREN) {
 			return &GroupedExpression{Token: p.previous(), Expression: expr}
 		}
 	}
@@ -290,7 +316,7 @@ func (p *Parser) assignment() Expression {
 			return &Assignment{
 				Token:      equals,
 				Identifier: *identifier,
-				Right:      right,
+				Expression: right,
 			}
 		}
 	}
@@ -303,7 +329,7 @@ func (p *Parser) ternary() Expression {
 
 	if p.match(QUESTION) {
 		thenBranch := p.expression()
-		if !p.consume(COLON) {
+		if !p.expectPeek(COLON) {
 			return expression
 		}
 		elseBranch := p.ternary()

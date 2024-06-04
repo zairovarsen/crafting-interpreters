@@ -34,6 +34,7 @@ type Visitor interface {
 	VisitExpressionStatement(node *ExpressionStatement) Object
 	VisitReturnStatement(node *ReturnStatement) Object
 	VisitPrintStatement(node *PrintStatement) Object
+	VisitVarStatement(node *VarStatement) Object
 }
 
 type Environment struct {
@@ -113,6 +114,17 @@ func (i *Interpreter) VisitIdentifier(node *Identifier) Object {
 
 func (i *Interpreter) VisitGroupedExpression(node *GroupedExpression) Object {
 	return nil
+}
+
+func (i *Interpreter) VisitVarStatement(node *VarStatement) Object {
+	right := node.Expression.Accept(i)
+
+	if !i.isError(right) {
+		// define a variable
+		i.env.Set(node.Identifier.Value, right)
+	}
+
+	return right
 }
 
 func (i *Interpreter) VisitBinary(node *Binary) Object {
@@ -229,7 +241,7 @@ func (i *Interpreter) VisitNilLiteral(node *NilLiteral) Object {
 }
 
 func (i *Interpreter) VisitAssignment(node *Assignment) Object {
-	right := node.Right.Accept(i)
+	right := node.Expression.Accept(i)
 
 	if !i.isError(right) {
 		i.env.Set(node.Identifier.Value, right)
@@ -255,10 +267,9 @@ func (i *Interpreter) VisitProgram(node *Program) Object {
 
 	for _, s := range node.Statements {
 		result = s.Accept(i)
-		// fmt.Println(result.Inspect())
-		err, ok := result.(*ErrorObject)
-		if ok {
-			return err
+		if i.isError(result) {
+			fmt.Println(result.Inspect())
+			return result
 		}
 	}
 
@@ -270,8 +281,7 @@ func (i *Interpreter) VisitBlockStatement(node *BlockStatement) Object {
 }
 
 func (i *Interpreter) VisitExpressionStatement(node *ExpressionStatement) Object {
-	node.Expression.Accept(i)
-	return nil
+	return node.Expression.Accept(i)
 }
 
 func (i *Interpreter) Interpret(node Node) Object {
