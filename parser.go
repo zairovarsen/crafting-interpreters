@@ -67,7 +67,7 @@ func (p *Parser) parse() *Program {
 	stmts := make([]Statement, 0)
 
 	for !p.isAtEnd() {
-		stmt := p.parseStatement()
+		stmt := p.statement()
 		if stmt != nil {
 			stmts = append(stmts, stmt)
 		} else {
@@ -79,28 +79,51 @@ func (p *Parser) parse() *Program {
 	return program
 }
 
-func (p *Parser) parseStatement() Statement {
+func (p *Parser) statement() Statement {
 	switch p.peek().Type {
+	case PRINT:
+		return p.printStatement()
 	case RETURN:
-		return p.parseReturnStatement()
+		return p.returnStatement()
 	default:
-		return p.parseExpressionStatement()
+		return p.expressionStatement()
 	}
 }
 
-func (p *Parser) parseReturnStatement() Statement {
+func (p *Parser) printStatement() Statement {
+	stmt := &PrintStatement{Token: p.peek()}
+
+	p.advance()
+
+	stmt.PrintValue = p.expression()
+
+	if !p.consume(SEMICOLON) {
+		return nil
+	}
+	return stmt
+}
+
+func (p *Parser) returnStatement() Statement {
 	stmt := &ReturnStatement{Token: p.peek()}
 
 	p.advance()
 
 	stmt.ReturnValue = p.expression()
+
+	if !p.consume(SEMICOLON) {
+		return nil
+	}
 	return stmt
 }
 
-func (p *Parser) parseExpressionStatement() Statement {
+func (p *Parser) expressionStatement() Statement {
 	stmt := &ExpressionStatement{Token: p.peek()}
 
 	stmt.Expression = p.expression()
+
+	if !p.consume(SEMICOLON) {
+		return nil
+	}
 	return stmt
 }
 

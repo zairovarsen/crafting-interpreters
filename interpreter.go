@@ -33,6 +33,7 @@ type Visitor interface {
 	VisitBlockStatement(node *BlockStatement) Object
 	VisitExpressionStatement(node *ExpressionStatement) Object
 	VisitReturnStatement(node *ReturnStatement) Object
+	VisitPrintStatement(node *PrintStatement) Object
 }
 
 type Environment struct {
@@ -94,6 +95,12 @@ func (i *Interpreter) isTruthy(value Object) bool {
 func (i *Interpreter) newError(format string, args ...interface{}) Object {
 	msg := fmt.Sprintf(format, args...)
 	return &ErrorObject{msg}
+}
+
+func (i *Interpreter) VisitPrintStatement(node *PrintStatement) Object {
+	value := node.PrintValue.Accept(i)
+	fmt.Println(value.Inspect())
+	return nil
 }
 
 func (i *Interpreter) VisitIdentifier(node *Identifier) Object {
@@ -248,7 +255,7 @@ func (i *Interpreter) VisitProgram(node *Program) Object {
 
 	for _, s := range node.Statements {
 		result = s.Accept(i)
-		fmt.Println(result.Inspect())
+		// fmt.Println(result.Inspect())
 		err, ok := result.(*ErrorObject)
 		if ok {
 			return err
@@ -263,7 +270,8 @@ func (i *Interpreter) VisitBlockStatement(node *BlockStatement) Object {
 }
 
 func (i *Interpreter) VisitExpressionStatement(node *ExpressionStatement) Object {
-	return node.Expression.Accept(i)
+	node.Expression.Accept(i)
+	return nil
 }
 
 func (i *Interpreter) Interpret(node Node) Object {

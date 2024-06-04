@@ -87,6 +87,30 @@ func (b *BlockStatement) Accept(visitor Visitor) Object {
 	return visitor.VisitBlockStatement(b)
 }
 
+type PrintStatement struct {
+	Token      Token
+	PrintValue Expression
+}
+
+func (p *PrintStatement) statementNode() {}
+func (p *PrintStatement) TokenLiteral() string {
+	return p.Token.Lexeme
+}
+func (p *PrintStatement) String() string {
+	var str strings.Builder
+
+	str.WriteString(p.TokenLiteral() + " ")
+
+	if p.PrintValue != nil {
+		str.WriteString(p.PrintValue.String())
+	}
+
+	return str.String()
+}
+func (p *PrintStatement) Accept(visitor Visitor) Object {
+	return visitor.VisitPrintStatement(p)
+}
+
 type ReturnStatement struct {
 	Token       Token
 	ReturnValue Expression
