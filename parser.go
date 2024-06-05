@@ -90,6 +90,8 @@ func (p *Parser) declaration() Statement {
 
 func (p *Parser) statement() Statement {
 	switch p.peek().Type {
+	case LEFT_BRACKET:
+		return p.block()
 	case PRINT:
 		return p.printStatement()
 	case RETURN:
@@ -97,6 +99,25 @@ func (p *Parser) statement() Statement {
 	default:
 		return p.expressionStatement()
 	}
+}
+
+func (p *Parser) block() Statement {
+	blockStmt := &BlockStatement{Token: p.advance()}
+	statements := make([]Statement, 0)
+
+	for !p.check(RIGHT_BRACKET) && !p.isAtEnd() {
+		stmt := p.declaration()
+		if stmt != nil {
+			statements = append(statements, stmt)
+		}
+	}
+
+	if !p.expectPeek(RIGHT_BRACKET) {
+		return nil
+	}
+
+	blockStmt.Statements = statements
+	return blockStmt
 }
 
 func (p *Parser) varDeclaration() Statement {
@@ -108,9 +129,15 @@ func (p *Parser) varDeclaration() Statement {
 
 	stmt.Identifier = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
 
-	if !p.expectPeek(EQUAL) {
+	if !p.check(EQUAL) {
+		// nil
+		if p.expectPeek(SEMICOLON) {
+			stmt.Expression = &NilLiteral{}
+			return stmt
+		}
 		return nil
 	}
+	p.advance()
 
 	stmt.Expression = p.expression()
 
@@ -305,6 +332,21 @@ func (p *Parser) equality() Expression {
 	return expr
 }
 
+func (p *Parser) ternary() Expression {
+	expression := p.equality()
+
+	if p.match(QUESTION) {
+		thenBranch := p.expression()
+		if !p.expectPeek(COLON) {
+			return expression
+		}
+		elseBranch := p.ternary()
+		expression = &TernaryExpression{Condition: expression, ThenBranch: thenBranch, ElseBranch: elseBranch}
+	}
+
+	return expression
+}
+
 func (p *Parser) assignment() Expression {
 	expr := p.ternary()
 
@@ -319,24 +361,12 @@ func (p *Parser) assignment() Expression {
 				Expression: right,
 			}
 		}
+
+		p.addError(&Error{Message: "Invalid assignment target.", Line: p.previous().Line})
+		return nil
 	}
 
 	return expr
-}
-
-func (p *Parser) ternary() Expression {
-	expression := p.equality()
-
-	if p.match(QUESTION) {
-		thenBranch := p.expression()
-		if !p.expectPeek(COLON) {
-			return expression
-		}
-		elseBranch := p.ternary()
-		expression = &TernaryExpression{Condition: expression, ThenBranch: thenBranch, ElseBranch: elseBranch}
-	}
-
-	return expression
 }
 
 func (p *Parser) comma() Expression {

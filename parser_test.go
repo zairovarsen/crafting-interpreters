@@ -11,22 +11,51 @@ func createParseProgram(input string) *Program {
 
 	fmt.Println(scanner.Tokens)
 	parser := NewParser(scanner.Tokens)
-	expr := parser.parse()
+	program := parser.parse()
 
-	return expr
+	return program
+}
+
+func TestBlockStatement(t *testing.T) {
+	input := `
+		{
+			var a = 10;
+			var b = 20;
+			c = a + b;
+		}
+	`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("Expected length of statements to be %d, got=%d", 3, len(program.Statements))
+	}
+
+	block, ok := program.Statements[0].(*BlockStatement)
+	if !ok {
+		t.Errorf("Expected=%T, got=%T", &BlockStatement{}, program.Statements[0])
+	}
+
+	if len(block.Statements) != 3 {
+		t.Errorf("Expected length of block statements to be %d, got=%d", 3, len(program.Statements))
+	}
+
+	if !testVarStatement(t, block.Statements[0], "a", 10) {
+		return
+	}
 }
 
 func TestReturnStatement(t *testing.T) {
 	input := `
-		return 10
-		return 20
-		return 30
+		return 10;
+		return 20;
+		return 30;
 	`
 
 	program := createParseProgram(input)
 
 	if len(program.Statements) != 3 {
-		t.Fatalf("Expected length of statements to be %d, got=%d", len(program.Statements), 3)
+		t.Fatalf("Expected length of statements to be %d, got=%d", 3, len(program.Statements))
 	}
 
 	for _, stmt := range program.Statements {
@@ -41,17 +70,87 @@ func TestReturnStatement(t *testing.T) {
 	}
 }
 
+func TestVarStatement(t *testing.T) {
+	tests := []struct {
+		input              string
+		expectedIdentifier string
+		expectedValue      interface{}
+	}{
+		{
+			"var a = 20;",
+			"a",
+			20,
+		},
+		{
+			`var b =  "hello world";`,
+			"b",
+			"hello world",
+		},
+		{
+			"var c = true;",
+			"c",
+			true,
+		},
+		{
+			"var d = 5 + 5;",
+			"d",
+			10,
+		},
+	}
+
+	for _, test := range tests {
+		program := createParseProgram(test.input)
+
+		if len(program.Statements) != 1 {
+			t.Fatalf("Expected length of statement to be %d, got %d", 1, len(program.Statements))
+		}
+
+		if !testVarStatement(t, program.Statements[0], test.expectedIdentifier, test.expectedValue) {
+			return
+		}
+	}
+}
+
+func testVarStatement(t *testing.T, s Statement, expectedIdentifer string, expectedValue interface{}) bool {
+	variable, ok := s.(*VarStatement)
+	if !ok {
+		t.Errorf("Expected=%T, got=%T", &VarStatement{}, s)
+		return false
+	}
+
+	if variable.TokenLiteral() != "var" {
+		t.Errorf("Expected TokenLiteral to be %s, got=%s", "var", variable.TokenLiteral())
+		return false
+	}
+
+	if variable.Identifier.Value != expectedIdentifer {
+		t.Errorf("Expected Identifier %s, got=%s", expectedIdentifer, variable.Identifier.Value)
+		return false
+	}
+
+	if variable.Identifier.TokenLiteral() != expectedIdentifer {
+		t.Errorf("Expected Identifier %s, got=%s", expectedIdentifer, variable.Identifier.TokenLiteral())
+		return false
+	}
+
+	if !testLiteral(t, variable.Expression, expectedValue) {
+		return false
+	}
+
+	return true
+}
+
 func TestGroupedExpression(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected interface{}
 	}{
 		{
-			"(5)",
+			"(5);",
 			5,
 		},
 		{
-			`("hello world")`,
+			`("hello world");`,
 			"hello world",
 		},
 	}
@@ -85,27 +184,27 @@ func TestOperatorPrecedence(t *testing.T) {
 		expected string
 	}{
 		{
-			"-a * b",
+			"-a * b;",
 			"((-a) * b)",
 		},
 		{
-			"!-a",
+			"!-a;",
 			"(!(-a))",
 		},
 		{
-			"a + b + c",
+			"a + b + c;",
 			"((a + b) + c)",
 		},
 		{
-			"a * b * c",
+			"a * b * c;",
 			"((a * b) * c)",
 		},
 		{
-			"a * b / c",
+			"a * b / c;",
 			"((a * b) / c)",
 		},
 		{
-			"a + b * c + d / e - f",
+			"a + b * c + d / e - f;",
 			"(((a + (b * c)) + (d / e)) - f)",
 		},
 	}
@@ -126,9 +225,9 @@ func TestUnary(t *testing.T) {
 		operator string
 		right    interface{}
 	}{
-		{"!5", "!", 5},
-		{"!false", "!", false},
-		{"-10", "-", 10},
+		{"!5;", "!", 5},
+		{"!false;", "!", false},
+		{"-10;", "-", 10},
 	}
 
 	for _, test := range tests {
@@ -165,16 +264,16 @@ func TestBinary(t *testing.T) {
 		operator string
 		right    interface{}
 	}{
-		{"5+5", 5, "+", 5},
-		{"5-5", 5, "-", 5},
-		{"5/5", 5, "/", 5},
-		{"5*5", 5, "*", 5},
-		{"5>5", 5, ">", 5},
-		{"5<5", 5, "<", 5},
-		{"5!=5", 5, "!=", 5},
-		{"5==5", 5, "==", 5},
-		{"true == false", true, "==", false},
-		{"false != false", false, "==", false},
+		{"5+5;", 5, "+", 5},
+		{"5-5;", 5, "-", 5},
+		{"5/5;", 5, "/", 5},
+		{"5*5;", 5, "*", 5},
+		{"5>5;", 5, ">", 5},
+		{"5<5;", 5, "<", 5},
+		{"5!=5;", 5, "!=", 5},
+		{"5==5;", 5, "==", 5},
+		{"true == false;", true, "==", false},
+		{"false != false;", false, "==", false},
 	}
 
 	for _, test := range tests {
@@ -215,12 +314,12 @@ func TestAssignment(t *testing.T) {
 		expectedValue      interface{}
 	}{
 		{
-			input:              "a = 20",
+			input:              "a = 20;",
 			expectedIdentifier: "a",
 			expectedValue:      20,
 		},
 		{
-			input:              `b = "hello world"`,
+			input:              `b = "hello world";`,
 			expectedIdentifier: "b",
 			expectedValue:      "hello world",
 		},
@@ -247,14 +346,14 @@ func TestAssignment(t *testing.T) {
 			t.Errorf("Expected assignment value %s, got=%s", test.expectedIdentifier, assignment.Identifier.Value)
 		}
 
-		if !testLiteral(t, assignment.Right, test.expectedValue) {
+		if !testLiteral(t, assignment.Expression, test.expectedValue) {
 			return
 		}
 	}
 }
 
 func TestIntegerLiteral(t *testing.T) {
-	input := `1`
+	input := `1;`
 
 	program := createParseProgram(input)
 
@@ -278,11 +377,11 @@ func TestBooleanLiteral(t *testing.T) {
 		expected bool
 	}{
 		{
-			input:    "true",
+			input:    "true;",
 			expected: true,
 		},
 		{
-			input:    "false",
+			input:    "false;",
 			expected: false,
 		},
 	}
@@ -306,7 +405,7 @@ func TestBooleanLiteral(t *testing.T) {
 }
 
 func TestStringLiteral(t *testing.T) {
-	input := `"hello world"`
+	input := `"hello world";`
 
 	program := createParseProgram(input)
 

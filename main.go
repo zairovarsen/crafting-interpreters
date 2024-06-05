@@ -70,7 +70,7 @@ func run(input []byte, env *Environment) {
 		return
 	}
 
-	fmt.Println(scanner.Tokens)
+	// fmt.Println(scanner.Tokens)
 	parser := NewParser(scanner.Tokens)
 	expr := parser.parse()
 
@@ -79,6 +79,6 @@ func run(input []byte, env *Environment) {
 		return
 	}
 
-	interpreter := NewInterpreter(env)
-	interpreter.Interpret(expr)
+	interpreter := NewInterpreter()
+	interpreter.Interpret(expr, env)
 }

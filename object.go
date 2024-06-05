@@ -56,7 +56,7 @@ type NilObject struct {
 }
 
 func (n *NilObject) Type() ObjectType { return NullObj }
-func (n *NilObject) Inspect() string  { return "null" }
+func (n *NilObject) Inspect() string  { return "nill" }
 
 type ReturnValueObject struct {
 	Value Object
