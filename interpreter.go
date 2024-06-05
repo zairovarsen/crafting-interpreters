@@ -8,6 +8,8 @@ const (
 	divisionByZero          = "divide by zero"
 	identifierNotFoundError = "identifier not found"
 	notFunctionError        = "not a function"
+	invalidSyntax           = "invalid syntax"
+	notInitialzied          = "variable is not initialized"
 )
 
 var (
@@ -35,6 +37,8 @@ type Visitor interface {
 	VisitReturnStatement(node *ReturnStatement, env *Environment) Object
 	VisitPrintStatement(node *PrintStatement, env *Environment) Object
 	VisitVarStatement(node *VarStatement, env *Environment) Object
+	VisitIfStatement(node *IfStatement, env *Environment) Object
+	VisitLogical(node *Logical, env *Environment) Object
 }
 
 type Interpreter struct{}
@@ -88,11 +92,45 @@ func (i *Interpreter) VisitIdentifier(node *Identifier, env *Environment) Object
 	if !ok {
 		return i.newError("%s: %s", identifierNotFoundError, node.Value)
 	}
+	if obj.Type() == NillObj {
+		return i.newError("%s: %s", notInitialzied, node.TokenLiteral())
+	}
 	return obj
 }
 
+func (i *Interpreter) VisitLogical(node *Logical, env *Environment) Object {
+	left := node.Left.Accept(i, env)
+
+	if node.Token.Type == OR {
+		if i.isTruthy(left) {
+			return left
+		}
+	} else {
+		if !i.isTruthy(left) {
+			return left
+		}
+	}
+
+	return node.Right.Accept(i, env)
+}
+
 func (i *Interpreter) VisitGroupedExpression(node *GroupedExpression, env *Environment) Object {
-	return nil
+	return node.Expression.Accept(i, env)
+}
+
+func (i *Interpreter) VisitIfStatement(node *IfStatement, env *Environment) Object {
+	condition := node.Condition.Accept(i, env)
+	if i.isError(condition) {
+		return condition
+	}
+
+	if i.isTruthy(condition) {
+		return node.ThenBranch.Accept(i, env)
+	} else if node.ElseBranch != nil {
+		return node.ElseBranch.Accept(i, env)
+	} else {
+		return Null
+	}
 }
 
 func (i *Interpreter) VisitVarStatement(node *VarStatement, env *Environment) Object {
@@ -247,7 +285,6 @@ func (i *Interpreter) VisitProgram(node *Program, env *Environment) Object {
 	for _, s := range node.Statements {
 		result = s.Accept(i, env)
 		if i.isError(result) {
-			fmt.Println(result.Inspect())
 			return result
 		}
 	}

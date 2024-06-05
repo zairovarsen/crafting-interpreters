@@ -92,6 +92,8 @@ func (p *Parser) statement() Statement {
 	switch p.peek().Type {
 	case LEFT_BRACKET:
 		return p.block()
+	case IF:
+		return p.ifStatement()
 	case PRINT:
 		return p.printStatement()
 	case RETURN:
@@ -99,6 +101,25 @@ func (p *Parser) statement() Statement {
 	default:
 		return p.expressionStatement()
 	}
+}
+
+func (p *Parser) ifStatement() Statement {
+	stmt := &IfStatement{Token: p.advance()}
+	if !p.expectPeek(LEFT_PAREN) {
+		return nil
+	}
+	stmt.Condition = p.expression()
+
+	if !p.expectPeek(RIGHT_PAREN) {
+		return nil
+	}
+
+	stmt.ThenBranch = p.statement()
+	if p.match(ELSE) {
+		stmt.ElseBranch = p.statement()
+	}
+
+	return stmt
 }
 
 func (p *Parser) block() Statement {
@@ -333,25 +354,66 @@ func (p *Parser) equality() Expression {
 }
 
 func (p *Parser) ternary() Expression {
-	expression := p.equality()
+	expr := p.equality()
 
 	if p.match(QUESTION) {
+		operator := p.previous()
 		thenBranch := p.expression()
 		if !p.expectPeek(COLON) {
-			return expression
+			return expr
 		}
 		elseBranch := p.ternary()
-		expression = &TernaryExpression{Condition: expression, ThenBranch: thenBranch, ElseBranch: elseBranch}
+		expr = &TernaryExpression{
+			Token:      operator,
+			Condition:  expr,
+			ThenBranch: thenBranch,
+			ElseBranch: elseBranch,
+		}
 	}
 
-	return expression
+	return expr
+}
+
+func (p *Parser) and() Expression {
+	expr := p.ternary()
+
+	for p.match(AND) {
+		operator := p.previous()
+		right := p.ternary()
+		expr = &Logical{
+			Token:    operator,
+			Left:     expr,
+			Operator: operator.Lexeme,
+			Right:    right,
+		}
+	}
+
+	return expr
+}
+
+func (p *Parser) or() Expression {
+	expr := p.and()
+
+	for p.match(OR) {
+		operator := p.previous()
+		right := p.and()
+		expr = &Logical{
+			Token:    operator,
+			Left:     expr,
+			Operator: operator.Lexeme,
+			Right:    right,
+		}
+	}
+
+	return expr
 }
 
 func (p *Parser) assignment() Expression {
-	expr := p.ternary()
+	expr := p.or()
 
 	for p.match(EQUAL) {
 		equals := p.previous()
+		// chaining assignemnts x = y = z = 10
 		right := p.assignment()
 
 		if identifier, ok := expr.(*Identifier); ok {

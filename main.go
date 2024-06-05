@@ -80,5 +80,8 @@ func run(input []byte, env *Environment) {
 	}
 
 	interpreter := NewInterpreter()
-	interpreter.Interpret(expr, env)
+	result := interpreter.Interpret(expr, env)
+	if result != nil {
+		fmt.Println(result.Inspect())
+	}
 }

@@ -16,6 +16,163 @@ func createParseProgram(input string) *Program {
 	return program
 }
 
+func TestLogicalAnd(t *testing.T) {
+	tests := []struct {
+		code     string
+		left     interface{}
+		operator string
+		right    interface{}
+	}{
+		{"false and true;", false, "and", true},
+		{"true and 5;", true, "and", 5},
+		{`"hello" and "world";`, "hello", "and", "world"},
+	}
+
+	for _, test := range tests {
+		program := createParseProgram(test.code)
+
+		if len(program.Statements) != 1 {
+			t.Fatalf("Expected length of statements to be %d, got=%d", 1, len(program.Statements))
+		}
+
+		expr, ok := program.Statements[0].(*ExpressionStatement)
+		if !ok {
+			t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+		}
+
+		logicaland, ok := expr.Expression.(*Logical)
+
+		if logicaland.Operator != test.operator {
+			t.Errorf("Expected operator %s, got=%s", test.operator, logicaland.Operator)
+		}
+
+		if !testLiteral(t, logicaland.Left, test.left) {
+			return
+		}
+
+		if !testLiteral(t, logicaland.Right, test.right) {
+			return
+		}
+	}
+}
+
+func TestLogicalOr(t *testing.T) {
+	tests := []struct {
+		code     string
+		left     interface{}
+		operator string
+		right    interface{}
+	}{
+		{"false or true;", false, "or", true},
+		{"true or 5;", true, "or", 5},
+		{`"hello" or "world";`, "hello", "or", "world"},
+	}
+
+	for _, test := range tests {
+		program := createParseProgram(test.code)
+
+		if len(program.Statements) != 1 {
+			t.Fatalf("Expected length of statements to be %d, got=%d", 1, len(program.Statements))
+		}
+
+		expr, ok := program.Statements[0].(*ExpressionStatement)
+		if !ok {
+			t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+		}
+
+		logicaland, ok := expr.Expression.(*Logical)
+
+		if logicaland.Operator != test.operator {
+			t.Errorf("Expected operator %s, got=%s", test.operator, logicaland.Operator)
+		}
+
+		if !testLiteral(t, logicaland.Left, test.left) {
+			return
+		}
+
+		if !testLiteral(t, logicaland.Right, test.right) {
+			return
+		}
+	}
+}
+
+func TestIfStatement(t *testing.T) {
+	input := `if (x < y) { x; }`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("Expected length of statements to be %d, got=%d", 1, len(program.Statements))
+	}
+
+	ifstmt, ok := program.Statements[0].(*IfStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &IfStatement{}, program.Statements[0])
+	}
+
+	if !testBinaryExpression(t, ifstmt.Condition, "x", "<", "y") {
+		return
+	}
+
+	block, ok := ifstmt.ThenBranch.(*BlockStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BlockStatement{}, ifstmt.ThenBranch)
+	}
+
+	if len(block.Statements) != 1 {
+		t.Errorf("Expected length of then to be %d, got=%d", 1, len(block.Statements))
+	}
+}
+
+func TestIfElseStatement(t *testing.T) {
+	input := `if (x < y) { x; } else { y; }`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("Expected length of statements to be %d, got=%d", 1, len(program.Statements))
+	}
+
+	ifstmt, ok := program.Statements[0].(*IfStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &IfStatement{}, program.Statements[0])
+	}
+
+	if !testBinaryExpression(t, ifstmt.Condition, "x", "<", "y") {
+		return
+	}
+
+	then, ok := ifstmt.ThenBranch.(*BlockStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BlockStatement{}, ifstmt.ThenBranch)
+	}
+
+	if len(then.Statements) != 1 {
+		t.Errorf("Expected length of then to be %d, got=%d", 1, len(then.Statements))
+	}
+
+	thenExpr, ok := then.Statements[0].(*ExpressionStatement)
+
+	if !testLiteral(t, thenExpr.Expression, "x") {
+		return
+	}
+
+	alternative, ok := ifstmt.ElseBranch.(*BlockStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BlockStatement{}, ifstmt.ThenBranch)
+	}
+
+	if len(alternative.Statements) != 1 {
+		t.Errorf("Expected length of alternative to be %d, got=%d", 1, len(alternative.Statements))
+	}
+
+	alternativeExpr, ok := alternative.Statements[0].(*ExpressionStatement)
+
+	if !testLiteral(t, alternativeExpr.Expression, "y") {
+		return
+	}
+}
+
 func TestBlockStatement(t *testing.T) {
 	input := `
 		{
@@ -288,23 +445,33 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("Expected=%T, got=%T", &ExpressionStatement{}, program.Statements[0])
 		}
 
-		binary, ok := stmt.Expression.(*Binary)
-		if !ok {
-			t.Fatalf("Expected=%T, got=%T", &Binary{}, stmt.Expression)
-		}
-
-		if binary.Operator != test.operator {
-			t.Errorf("Expected operator to be %s, got=%s", test.operator, binary.Operator)
-		}
-
-		if !testLiteral(t, binary.Left, test.left) {
-			return
-		}
-
-		if !testLiteral(t, binary.Right, test.right) {
+		if !testBinaryExpression(t, stmt.Expression, test.left, test.operator, test.right) {
 			return
 		}
 	}
+}
+
+func testBinaryExpression(t *testing.T, exp Expression, left interface{}, operator string, right interface{}) bool {
+	binary, ok := exp.(*Binary)
+	if !ok {
+		t.Fatalf("Expected=%T, got=%T", &Binary{}, exp)
+		return false
+	}
+
+	if !testLiteral(t, binary.Left, left) {
+		return false
+	}
+
+	if binary.Operator != operator {
+		t.Errorf("Expected operator to be %s, got=%s", operator, binary.Operator)
+		return false
+	}
+
+	if !testLiteral(t, binary.Right, right) {
+		return false
+	}
+
+	return true
 }
 
 func TestAssignment(t *testing.T) {
@@ -424,6 +591,7 @@ func TestStringLiteral(t *testing.T) {
 }
 
 func testLiteral(t *testing.T, expr Expression, expected interface{}) bool {
+
 	switch e := expected.(type) {
 	case float64:
 		return testFloat(t, expr, e)
@@ -480,17 +648,28 @@ func testBoolean(t *testing.T, expr Expression, expected bool) bool {
 
 func testString(t *testing.T, expr Expression, expected string) bool {
 	t.Helper()
+	var value, tokenLiteral string = "", ""
+
 	str, ok := expr.(*StringLiteral)
-	if !ok {
-		t.Fatalf("Expected=%T, got=%T", &StringLiteral{}, expr)
+	if ok {
+		value = str.Value
+		tokenLiteral = str.TokenLiteral()
+	} else {
+		str, ok := expr.(*Identifier)
+		if !ok {
+			t.Fatalf("Expected=%T, got=%T", &StringLiteral{}, expr)
+			return false
+		}
+		value = str.Value
+		tokenLiteral = str.Value
 	}
 
-	if str.Value != expected {
+	if value != expected {
 		t.Errorf("Expected StringLiteral value to be %s, got=%s", expected, str.Value)
 		return false
 	}
 
-	if str.TokenLiteral() != expected {
+	if tokenLiteral != expected {
 		t.Errorf("Expected StringLiteral token to be %s, got=%s", expected, str.Value)
 		return false
 	}

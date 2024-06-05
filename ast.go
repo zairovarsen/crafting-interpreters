@@ -49,6 +49,35 @@ func (p *Program) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitProgram(p, env)
 }
 
+type IfStatement struct {
+	Token      Token
+	Condition  Expression
+	ThenBranch Statement
+	ElseBranch Statement
+}
+
+func (is *IfStatement) statementNode() {}
+func (is *IfStatement) String() string {
+	var str strings.Builder
+
+	str.WriteString(is.TokenLiteral())
+	str.WriteString(" ( " + is.Condition.String() + " ) {\n")
+	str.WriteString(is.ThenBranch.String() + "} ")
+
+	if is.ElseBranch != nil {
+		str.WriteString("else {\n")
+		str.WriteString(is.ElseBranch.String() + "} ")
+	}
+
+	return str.String()
+}
+func (is *IfStatement) TokenLiteral() string {
+	return is.Token.Lexeme
+}
+func (is *IfStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitIfStatement(is, env)
+}
+
 type ExpressionStatement struct {
 	Token      Token
 	Expression Expression
@@ -380,4 +409,30 @@ func (b *Binary) String() string {
 }
 func (b *Binary) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitBinary(b, env)
+}
+
+type Logical struct {
+	Token    Token // operator token
+	Left     Expression
+	Operator string
+	Right    Expression
+}
+
+func (l *Logical) TokenLiteral() string {
+	return l.Token.Lexeme
+}
+func (l *Logical) expressionNode() {}
+func (l *Logical) String() string {
+	var str strings.Builder
+
+	str.WriteString("(")
+	str.WriteString(l.Left.String())
+	str.WriteString(" " + l.Operator + " ")
+	str.WriteString(l.Right.String())
+	str.WriteString(")")
+
+	return str.String()
+}
+func (l *Logical) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitLogical(l, env)
 }

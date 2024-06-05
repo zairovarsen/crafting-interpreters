@@ -7,7 +7,7 @@ type ObjectType string
 const (
 	FloatObj            = "Float"
 	BooleanObj          = "Boolean"
-	NullObj             = "Null"
+	NillObj             = "Nill"
 	ReturnValueObj      = "ReturnValue"
 	ErrorObj            = "Error"
 	FunctionObj         = "Function"
@@ -55,7 +55,7 @@ func (s *StringObject) Inspect() string  { return s.Value }
 type NilObject struct {
 }
 
-func (n *NilObject) Type() ObjectType { return NullObj }
+func (n *NilObject) Type() ObjectType { return NillObj }
 func (n *NilObject) Inspect() string  { return "nill" }
 
 type ReturnValueObject struct {
