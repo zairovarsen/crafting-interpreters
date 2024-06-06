@@ -16,6 +16,56 @@ func createParseProgram(input string) *Program {
 	return program
 }
 
+func TestWhile(t *testing.T) {
+	input := `while (5 > 2) { "hello world"; }`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("Expected length of statements to be %d, got=%d", 1, len(program.Statements))
+	}
+
+	whileStmt, ok := program.Statements[0].(*While)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &While{}, program.Statements[0])
+	}
+
+	condition, ok := whileStmt.Condition.(*Binary)
+	if !ok {
+		t.Errorf("Expected %T, got %T", &Binary{}, whileStmt.Condition)
+	}
+
+	if condition.Token.Type != GREATER {
+		t.Errorf("Expected operator %s, got=%s", GREATER, condition.Token.Type)
+	}
+
+	if !testLiteral(t, condition.Left, 5) {
+		return
+	}
+
+	if !testLiteral(t, condition.Right, 2) {
+		return
+	}
+
+	body, ok := whileStmt.Body.(*BlockStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BlockStatement{}, whileStmt.Body)
+	}
+
+	if len(body.Statements) != 1 {
+		t.Errorf("Expected length of statement to be %d, got=%d", 1, len(body.Statements))
+	}
+
+	expr, ok := body.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Errorf("Expected %T, got %T", &ExpressionStatement{}, body.Statements[0])
+	}
+
+	if !testLiteral(t, expr.Expression, "hello world") {
+		return
+	}
+}
+
 func TestLogicalAnd(t *testing.T) {
 	tests := []struct {
 		code     string

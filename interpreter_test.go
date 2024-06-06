@@ -28,6 +28,73 @@ func runInterpreter(input []byte) Object {
 	return interpreter.Interpret(program, env)
 }
 
+func TestWhileLoop(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected interface{}
+	}{
+		{
+			code: `
+				var i = 0;
+				while (i < 5) {
+					i = i + 1;
+				}
+				i;
+			`,
+			expected: 5,
+		},
+		{
+			code: `
+				var sum = 0;
+				var i = 1;
+				while (i <= 5) {
+					sum = sum + i;
+					i = i + 1;
+				}
+				sum;
+			`,
+			expected: 15,
+		},
+		// {
+		// 	code: `
+		// 		var a = 0;
+		// 		var b = 10;
+		// 		while (a < b) {
+		// 			if (a == 5) {
+		// 				break;
+		// 			}
+		// 			a = a + 1;
+		// 		}
+		// 		a;
+		// 	`,
+		// 	expected: 5,
+		// },
+		// {
+		// 	code: `
+		// 		var i = 0;
+		// 		var result = 0;
+		// 		while (i < 5) {
+		// 			i = i + 1;
+		// 			if (i % 2 == 0) {
+		// 				continue;
+		// 			}
+		// 			result = result + i;
+		// 		}
+		// 		result;
+		// 	`,
+		// 	expected: 9, // 1 + 3 + 5
+		// },
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if !testLiteralObject(t, result, test.expected) {
+			return
+		}
+	}
+}
+
 func TestLogicalAndConditional(t *testing.T) {
 	tests := []struct {
 		code     string
@@ -47,6 +114,7 @@ func TestLogicalAndConditional(t *testing.T) {
 		}
 	}
 }
+
 func TestLogicalOrConditional(t *testing.T) {
 	tests := []struct {
 		code     string

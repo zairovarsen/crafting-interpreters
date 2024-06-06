@@ -436,3 +436,28 @@ func (l *Logical) String() string {
 func (l *Logical) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitLogical(l, env)
 }
+
+type While struct {
+	Token     Token
+	Condition Expression
+	Body      Statement
+}
+
+func (w *While) TokenLiteral() string {
+	return w.Token.Lexeme
+}
+func (w *While) statementNode() {}
+func (w *While) String() string {
+	var str strings.Builder
+
+	str.WriteString(w.TokenLiteral())
+	str.WriteString("(")
+	str.WriteString(w.Condition.String())
+	str.WriteString(")")
+	str.WriteString(w.Body.String())
+
+	return str.String()
+}
+func (w *While) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitWhileStatement(w, env)
+}

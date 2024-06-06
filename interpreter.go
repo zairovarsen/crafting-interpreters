@@ -39,6 +39,7 @@ type Visitor interface {
 	VisitVarStatement(node *VarStatement, env *Environment) Object
 	VisitIfStatement(node *IfStatement, env *Environment) Object
 	VisitLogical(node *Logical, env *Environment) Object
+	VisitWhileStatement(node *While, env *Environment) Object
 }
 
 type Interpreter struct{}
@@ -79,6 +80,13 @@ func (i *Interpreter) isTruthy(value Object) bool {
 func (i *Interpreter) newError(format string, args ...interface{}) Object {
 	msg := fmt.Sprintf(format, args...)
 	return &ErrorObject{msg}
+}
+
+func (i *Interpreter) VisitWhileStatement(node *While, env *Environment) Object {
+	for i.isTruthy(node.Condition.Accept(i, env)) {
+		node.Body.Accept(i, env)
+	}
+	return nil
 }
 
 func (i *Interpreter) VisitPrintStatement(node *PrintStatement, env *Environment) Object {
@@ -138,7 +146,7 @@ func (i *Interpreter) VisitVarStatement(node *VarStatement, env *Environment) Ob
 
 	if !i.isError(right) {
 		// define a variable
-		env.Set(node.Identifier.Value, right)
+		env.Define(node.Identifier.Value, right)
 	}
 
 	return right

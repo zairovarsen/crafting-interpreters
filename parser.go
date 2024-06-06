@@ -90,6 +90,8 @@ func (p *Parser) declaration() Statement {
 
 func (p *Parser) statement() Statement {
 	switch p.peek().Type {
+	case WHILE:
+		return p.whileStatement()
 	case LEFT_BRACKET:
 		return p.block()
 	case IF:
@@ -101,6 +103,20 @@ func (p *Parser) statement() Statement {
 	default:
 		return p.expressionStatement()
 	}
+}
+
+func (p *Parser) whileStatement() Statement {
+	stmt := &While{Token: p.advance()}
+	if !p.expectPeek(LEFT_PAREN) {
+		return nil
+	}
+	stmt.Condition = p.expression()
+	if !p.expectPeek(RIGHT_PAREN) {
+		return nil
+	}
+	stmt.Body = p.statement()
+
+	return stmt
 }
 
 func (p *Parser) ifStatement() Statement {
@@ -274,7 +290,7 @@ func (p *Parser) unary() Expression {
 		operator := p.previous()
 		right := p.unary()
 		return &Unary{
-			Token:    p.peek(),
+			Token:    operator,
 			Operator: operator.Lexeme,
 			Right:    right,
 		}
@@ -291,7 +307,7 @@ func (p *Parser) factor() Expression {
 		right := p.unary()
 
 		expr = &Binary{
-			Token:    p.peek(),
+			Token:    operator,
 			Left:     expr,
 			Operator: operator.Lexeme,
 			Right:    right,
@@ -308,7 +324,7 @@ func (p *Parser) term() Expression {
 		operator := p.previous()
 		right := p.factor()
 		expr = &Binary{
-			Token:    p.peek(),
+			Token:    operator,
 			Left:     expr,
 			Operator: operator.Lexeme,
 			Right:    right,
@@ -325,7 +341,7 @@ func (p *Parser) comparison() Expression {
 		operator := p.previous()
 		right := p.term()
 		expr = &Binary{
-			Token:    p.peek(),
+			Token:    operator,
 			Left:     expr,
 			Operator: operator.Lexeme,
 			Right:    right,
@@ -343,7 +359,7 @@ func (p *Parser) equality() Expression {
 		operator := p.previous()
 		right := p.comparison()
 		expr = &Binary{
-			Token:    p.peek(),
+			Token:    operator,
 			Left:     expr,
 			Operator: operator.Lexeme,
 			Right:    right,
