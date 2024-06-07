@@ -40,43 +40,47 @@ const (
 	NUMBER     TokenType = "NUMBER"
 
 	// Keywords.
-	AND    TokenType = "AND"
-	CLASS  TokenType = "CLASS"
-	ELSE   TokenType = "ELSE"
-	FALSE  TokenType = "FALSE"
-	FUN    TokenType = "FUNCTION"
-	FOR    TokenType = "FOR"
-	IF     TokenType = "IF"
-	NIL    TokenType = "NIL"
-	OR     TokenType = "OR"
-	PRINT  TokenType = "PRINT"
-	RETURN TokenType = "RETURN"
-	SUPER  TokenType = "SUPER"
-	THIS   TokenType = "THIS"
-	TRUE   TokenType = "TRUE"
-	VAR    TokenType = "VAR"
-	WHILE  TokenType = "WHILE"
+	AND      TokenType = "AND"
+	CLASS    TokenType = "CLASS"
+	ELSE     TokenType = "ELSE"
+	FALSE    TokenType = "FALSE"
+	FUN      TokenType = "FUNCTION"
+	FOR      TokenType = "FOR"
+	IF       TokenType = "IF"
+	NIL      TokenType = "NIL"
+	OR       TokenType = "OR"
+	PRINT    TokenType = "PRINT"
+	RETURN   TokenType = "RETURN"
+	SUPER    TokenType = "SUPER"
+	THIS     TokenType = "THIS"
+	TRUE     TokenType = "TRUE"
+	VAR      TokenType = "VAR"
+	WHILE    TokenType = "WHILE"
+	BREAK    TokenType = "BREAK"
+	CONTINUE TokenType = "CONTINUE"
 
 	EOF TokenType = "EOF"
 )
 
 var reserved = map[string]TokenType{
-	"and":    AND,
-	"or":     OR,
-	"class":  CLASS,
-	"else":   ELSE,
-	"false":  FALSE,
-	"for":    FOR,
-	"fun":    FUN,
-	"if":     IF,
-	"nil":    NIL,
-	"print":  PRINT,
-	"return": RETURN,
-	"super":  SUPER,
-	"this":   THIS,
-	"true":   TRUE,
-	"var":    VAR,
-	"while":  WHILE,
+	"and":      AND,
+	"or":       OR,
+	"class":    CLASS,
+	"else":     ELSE,
+	"false":    FALSE,
+	"for":      FOR,
+	"fun":      FUN,
+	"if":       IF,
+	"nil":      NIL,
+	"print":    PRINT,
+	"return":   RETURN,
+	"super":    SUPER,
+	"this":     THIS,
+	"true":     TRUE,
+	"var":      VAR,
+	"while":    WHILE,
+	"break":    BREAK,
+	"continue": CONTINUE,
 }
 
 type Token struct {

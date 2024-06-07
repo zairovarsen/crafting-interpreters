@@ -20,26 +20,29 @@ var (
 
 // java way is terrible but whatever :)
 type Visitor interface {
-	VisitProgram(node *Program, env *Environment) Object
-	VisitIdentifier(node *Identifier, env *Environment) Object
-	VisitBinary(node *Binary, env *Environment) Object
-	VisitUnary(node *Unary, env *Environment) Object
-	VisitStringLiteral(node *StringLiteral, env *Environment) Object
-	VisitNumberLiteral(node *NumberLiteral, env *Environment) Object
-	VisitBooleanLiteral(node *BooleanLiteral, env *Environment) Object
-	VisitNilLiteral(node *NilLiteral, env *Environment) Object
-	VisitGroupedExpression(node *GroupedExpression, env *Environment) Object
-	VisitAssignment(node *Assignment, env *Environment) Object
-	VisitCommaExpression(node *CommaExpression, env *Environment) Object
-	VisitTernaryExpression(node *TernaryExpression, env *Environment) Object
-	VisitBlockStatement(node *BlockStatement, env *Environment) Object
-	VisitExpressionStatement(node *ExpressionStatement, env *Environment) Object
-	VisitReturnStatement(node *ReturnStatement, env *Environment) Object
-	VisitPrintStatement(node *PrintStatement, env *Environment) Object
-	VisitVarStatement(node *VarStatement, env *Environment) Object
-	VisitIfStatement(node *IfStatement, env *Environment) Object
-	VisitLogical(node *Logical, env *Environment) Object
-	VisitWhileStatement(node *While, env *Environment) Object
+	VisitProgram(node *Program, env *Environment, parent Statement) Object
+	VisitIdentifier(node *Identifier, env *Environment, parent Statement) Object
+	VisitBinary(node *Binary, env *Environment, parent Statement) Object
+	VisitUnary(node *Unary, env *Environment, parent Statement) Object
+	VisitStringLiteral(node *StringLiteral, env *Environment, parent Statement) Object
+	VisitNumberLiteral(node *NumberLiteral, env *Environment, parent Statement) Object
+	VisitBooleanLiteral(node *BooleanLiteral, env *Environment, parent Statement) Object
+	VisitNilLiteral(node *NilLiteral, env *Environment, parent Statement) Object
+	VisitGroupedExpression(node *GroupedExpression, env *Environment, parent Statement) Object
+	VisitAssignment(node *Assignment, env *Environment, parent Statement) Object
+	VisitCommaExpression(node *CommaExpression, env *Environment, parent Statement) Object
+	VisitTernaryExpression(node *TernaryExpression, env *Environment, parent Statement) Object
+	VisitBlockStatement(node *BlockStatement, env *Environment, parent Statement) Object
+	VisitExpressionStatement(node *ExpressionStatement, env *Environment, parent Statement) Object
+	VisitReturnStatement(node *ReturnStatement, env *Environment, parent Statement) Object
+	VisitPrintStatement(node *PrintStatement, env *Environment, parent Statement) Object
+	VisitVarStatement(node *VarStatement, env *Environment, parent Statement) Object
+	VisitIfStatement(node *IfStatement, env *Environment, parent Statement) Object
+	VisitLogical(node *Logical, env *Environment, parent Statement) Object
+	VisitWhileStatement(node *While, env *Environment, parent Statement) Object
+	VisitForStatement(node *For, env *Environment, parent Statement) Object
+	VisitBreakStatement(node *BreakStatement, env *Environment, parent Statement) Object
+	VisitContinueStatement(node *ContinueStatement, env *Environment, parent Statement) Object
 }
 
 type Interpreter struct{}
@@ -53,6 +56,27 @@ func (i *Interpreter) nativeToBooleanObject(input bool) Object {
 		return True
 	}
 	return False
+}
+
+func (i *Interpreter) isContinue(obj Object) bool {
+	if obj != nil {
+		return obj.Type() == ContinueObj
+	}
+	return false
+}
+
+func (i *Interpreter) isBreak(obj Object) bool {
+	if obj != nil {
+		return obj.Type() == BreakObj
+	}
+	return false
+}
+
+func (i *Interpreter) isReturn(obj Object) bool {
+	if obj != nil {
+		return obj.Type() == ReturnValueObj
+	}
+	return false
 }
 
 func (i *Interpreter) isError(obj Object) bool {
@@ -82,20 +106,92 @@ func (i *Interpreter) newError(format string, args ...interface{}) Object {
 	return &ErrorObject{msg}
 }
 
-func (i *Interpreter) VisitWhileStatement(node *While, env *Environment) Object {
-	for i.isTruthy(node.Condition.Accept(i, env)) {
-		node.Body.Accept(i, env)
+func (i *Interpreter) VisitContinueStatement(node *ContinueStatement, env *Environment, parent Statement) Object {
+	switch parent.(type) {
+	case *For, *While:
+		return &ContinueSignal{}
+	default:
+		return i.newError("%s: %s", invalidSyntax, "Continue statement not within loop")
 	}
+}
+
+func (i *Interpreter) VisitBreakStatement(node *BreakStatement, env *Environment, parent Statement) Object {
+	switch parent.(type) {
+	case *For, *While:
+		return &BreakSignal{}
+	default:
+		return i.newError("%s: %s", invalidSyntax, "Break statement not within loop")
+	}
+}
+
+func (i *Interpreter) VisitForStatement(node *For, env *Environment, parent Statement) Object {
+	if node.Initializer != nil {
+		initResult := node.Initializer.Accept(i, env, node)
+		if i.isError(initResult) {
+			return initResult
+		}
+	}
+
+	for {
+		condition := node.Condition.Accept(i, env, node)
+		if i.isError(condition) {
+			return condition
+		}
+
+		if !i.isTruthy(condition) {
+			break
+		}
+
+		body := node.Body.Accept(i, env, node)
+		if i.isContinue(body) {
+			goto increment
+		}
+		if i.isError(body) || i.isBreak(body) || i.isReturn(body) {
+			return body
+		}
+
+	increment:
+		if node.Increment != nil {
+			incrementResult := node.Increment.Accept(i, env, node)
+			if i.isError(incrementResult) {
+				return incrementResult
+			}
+		}
+	}
+
 	return nil
 }
 
-func (i *Interpreter) VisitPrintStatement(node *PrintStatement, env *Environment) Object {
-	value := node.PrintValue.Accept(i, env)
+func (i *Interpreter) VisitWhileStatement(node *While, env *Environment, parent Statement) Object {
+	for {
+		condition := node.Condition.Accept(i, env, node)
+		if i.isError(condition) {
+			return condition
+		}
+
+		if !i.isTruthy(condition) {
+			break
+		}
+
+		body := node.Body.Accept(i, env, node)
+		if i.isContinue(body) {
+			continue
+		}
+		if i.isError(body) || i.isBreak(body) || i.isReturn(body) {
+			return body
+		}
+	}
+
+	return nil
+}
+
+func (i *Interpreter) VisitPrintStatement(node *PrintStatement, env *Environment, parent Statement) Object {
+	value := node.PrintValue.Accept(i, env, parent)
 	fmt.Println(value.Inspect())
 	return nil
 }
 
-func (i *Interpreter) VisitIdentifier(node *Identifier, env *Environment) Object {
+func (i *Interpreter) VisitIdentifier(node *Identifier, env *Environment, parent Statement) Object {
 	obj, ok := env.Get(node.Value)
 	if !ok {
 		return i.newError("%s: %s", identifierNotFoundError, node.Value)
@@ -106,8 +202,8 @@ func (i *Interpreter) VisitIdentifier(node *Identifier, env *Environment) Object
 	return obj
 }
 
-func (i *Interpreter) VisitLogical(node *Logical, env *Environment) Object {
-	left := node.Left.Accept(i, env)
+func (i *Interpreter) VisitLogical(node *Logical, env *Environment, parent Statement) Object {
+	left := node.Left.Accept(i, env, parent)
 
 	if node.Token.Type == OR {
 		if i.isTruthy(left) {
@@ -119,30 +215,30 @@ func (i *Interpreter) VisitLogical(node *Logical, env *Environment) Object {
 		}
 	}
 
-	return node.Right.Accept(i, env)
+	return node.Right.Accept(i, env, parent)
 }
 
-func (i *Interpreter) VisitGroupedExpression(node *GroupedExpression, env *Environment) Object {
-	return node.Expression.Accept(i, env)
+func (i *Interpreter) VisitGroupedExpression(node *GroupedExpression, env *Environment, parent Statement) Object {
+	return node.Expression.Accept(i, env, parent)
 }
 
-func (i *Interpreter) VisitIfStatement(node *IfStatement, env *Environment) Object {
-	condition := node.Condition.Accept(i, env)
+func (i *Interpreter) VisitIfStatement(node *IfStatement, env *Environment, parent Statement) Object {
+	condition := node.Condition.Accept(i, env, parent)
 	if i.isError(condition) {
 		return condition
 	}
 
 	if i.isTruthy(condition) {
-		return node.ThenBranch.Accept(i, env)
+		return node.ThenBranch.Accept(i, env, parent)
 	} else if node.ElseBranch != nil {
-		return node.ElseBranch.Accept(i, env)
+		return node.ElseBranch.Accept(i, env, parent)
 	} else {
 		return Null
 	}
 }
 
-func (i *Interpreter) VisitVarStatement(node *VarStatement, env *Environment) Object {
-	right := node.Expression.Accept(i, env)
+func (i *Interpreter) VisitVarStatement(node *VarStatement, env *Environment, parent Statement) Object {
+	right := node.Expression.Accept(i, env, parent)
 
 	if !i.isError(right) {
 		// define a variable
@@ -152,11 +248,15 @@ func (i *Interpreter) VisitVarStatement(node *VarStatement, env *Environment) Ob
 	return right
 }
 
-func (i *Interpreter) VisitBinary(node *Binary, env *Environment) Object {
-	left := node.Left.Accept(i, env)
-	right := node.Right.Accept(i, env)
+func (i *Interpreter) VisitBinary(node *Binary, env *Environment, parent Statement) Object {
+	left := node.Left.Accept(i, env, parent)
+	right := node.Right.Accept(i, env, parent)
 
 	switch {
+	case left.Type() == ErrorObj:
+		return left
+	case right.Type() == ErrorObj:
+		return right
 	case left.Type() == StringObj && right.Type() == StringObj:
 		return i.stringarithmetic(left, right, node.Operator)
 	case left.Type() == FloatObj && right.Type() == FloatObj:
@@ -232,8 +332,8 @@ func (i *Interpreter) floatarithmetic(left Object, right Object, op string) Obje
 	}
 }
 
-func (i *Interpreter) VisitUnary(node *Unary, env *Environment) Object {
-	right := node.Right.Accept(i, env)
+func (i *Interpreter) VisitUnary(node *Unary, env *Environment, parent Statement) Object {
+	right := node.Right.Accept(i, env, parent)
 
 	switch node.Operator {
 	case "-":
@@ -249,24 +349,24 @@ func (i *Interpreter) VisitUnary(node *Unary, env *Environment) Object {
 	}
 }
 
-func (i *Interpreter) VisitStringLiteral(node *StringLiteral, env *Environment) Object {
+func (i *Interpreter) VisitStringLiteral(node *StringLiteral, env *Environment, parent Statement) Object {
 	return &StringObject{Value: node.Value}
 }
 
-func (i *Interpreter) VisitNumberLiteral(node *NumberLiteral, env *Environment) Object {
+func (i *Interpreter) VisitNumberLiteral(node *NumberLiteral, env *Environment, parent Statement) Object {
 	return &FloatObject{Value: node.Value}
 }
 
-func (i *Interpreter) VisitBooleanLiteral(node *BooleanLiteral, env *Environment) Object {
+func (i *Interpreter) VisitBooleanLiteral(node *BooleanLiteral, env *Environment, parent Statement) Object {
 	return &BooleanObject{Value: node.Value}
 }
 
-func (i *Interpreter) VisitNilLiteral(node *NilLiteral, env *Environment) Object {
+func (i *Interpreter) VisitNilLiteral(node *NilLiteral, env *Environment, parent Statement) Object {
 	return &NilObject{}
 }
 
-func (i *Interpreter) VisitAssignment(node *Assignment, env *Environment) Object {
-	right := node.Expression.Accept(i, env)
+func (i *Interpreter) VisitAssignment(node *Assignment, env *Environment, parent Statement) Object {
+	right := node.Expression.Accept(i, env, parent)
 
 	if !i.isError(right) {
 		env.Set(node.Identifier.Value, right)
@@ -275,23 +375,26 @@ func (i *Interpreter) VisitAssignment(node *Assignment, env *Environment) Object
 	return right
 }
 
-func (i *Interpreter) VisitCommaExpression(node *CommaExpression, env *Environment) Object {
+func (i *Interpreter) VisitCommaExpression(node *CommaExpression, env *Environment, parent Statement) Object {
 	return nil
 }
 
-func (i *Interpreter) VisitTernaryExpression(node *TernaryExpression, env *Environment) Object {
+func (i *Interpreter) VisitTernaryExpression(node *TernaryExpression, env *Environment, parent Statement) Object {
 	return nil
 }
 
-func (i *Interpreter) VisitReturnStatement(node *ReturnStatement, env *Environment) Object {
-	return nil
+func (i *Interpreter) VisitReturnStatement(node *ReturnStatement, env *Environment, parent Statement) Object {
+	switch parent.(type) {
+	default:
+		return i.newError("%s: %s", invalidSyntax, "Return statement not within function")
+	}
 }
 
-func (i *Interpreter) VisitProgram(node *Program, env *Environment) Object {
+func (i *Interpreter) VisitProgram(node *Program, env *Environment, parent Statement) Object {
 	var result Object
 
 	for _, s := range node.Statements {
-		result = s.Accept(i, env)
+		result = s.Accept(i, env, node)
 		if i.isError(result) {
 			return result
 		}
@@ -300,25 +403,28 @@ func (i *Interpreter) VisitProgram(node *Program, env *Environment) Object {
 	return result
 }
 
-func (i *Interpreter) VisitBlockStatement(node *BlockStatement, env *Environment) Object {
+func (i *Interpreter) VisitBlockStatement(node *BlockStatement, env *Environment, parent Statement) Object {
 	newEnv := NewEnclosingEnvironment(env)
-	return i.executeBlock(node.Statements, newEnv)
+	return i.executeBlock(node.Statements, newEnv, parent)
 }
 
-func (i *Interpreter) executeBlock(statements []Statement, env *Environment) Object {
+func (i *Interpreter) executeBlock(statements []Statement, env *Environment, parent Statement) Object {
 	var result Object
 
 	for _, stmt := range statements {
-		result = stmt.Accept(i, env)
+		result = stmt.Accept(i, env, parent)
+		if i.isBreak(result) || i.isReturn(result) || i.isError(result) || i.isContinue(result) {
+			return result
+		}
 	}
 
-	return result
+	return nil
 }
 
-func (i *Interpreter) VisitExpressionStatement(node *ExpressionStatement, env *Environment) Object {
-	return node.Expression.Accept(i, env)
+func (i *Interpreter) VisitExpressionStatement(node *ExpressionStatement, env *Environment, parent Statement) Object {
+	return node.Expression.Accept(i, env, parent)
 }
 
-func (i *Interpreter) Interpret(node Node, env *Environment) Object {
-	return node.Accept(i, env)
+func (i *Interpreter) Interpret(node Node, env *Environment, parent Statement) Object {
+	return node.Accept(i, env, parent)
 }

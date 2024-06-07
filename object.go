@@ -5,6 +5,8 @@ import "fmt"
 type ObjectType string
 
 const (
+	ContinueObj         = "Continue"
+	BreakObj            = "Break"
 	FloatObj            = "Float"
 	BooleanObj          = "Boolean"
 	NillObj             = "Nill"
@@ -23,6 +25,16 @@ type Object interface {
 	Type() ObjectType
 	Inspect() string
 }
+
+type ContinueSignal struct{}
+
+func (b *ContinueSignal) Type() ObjectType { return ContinueObj }
+func (b *ContinueSignal) Inspect() string  { return "CONTINUE" }
+
+type BreakSignal struct{}
+
+func (b *BreakSignal) Type() ObjectType { return BreakObj }
+func (b *BreakSignal) Inspect() string  { return "BREAK" }
 
 type ErrorObject struct {
 	Message string

@@ -90,6 +90,12 @@ func (p *Parser) declaration() Statement {
 
 func (p *Parser) statement() Statement {
 	switch p.peek().Type {
+	case CONTINUE:
+		return p.continueStatement()
+	case BREAK:
+		return p.breakStatement()
+	case FOR:
+		return p.forStatement()
 	case WHILE:
 		return p.whileStatement()
 	case LEFT_BRACKET:
@@ -103,6 +109,61 @@ func (p *Parser) statement() Statement {
 	default:
 		return p.expressionStatement()
 	}
+}
+
+func (p *Parser) breakStatement() Statement {
+	stmt := &BreakStatement{Token: p.advance()}
+
+	if !p.expectPeek(SEMICOLON) {
+		return nil
+	}
+
+	return stmt
+}
+
+func (p *Parser) continueStatement() Statement {
+	stmt := &ContinueStatement{Token: p.advance()}
+
+	if !p.expectPeek(SEMICOLON) {
+		return nil
+	}
+
+	return stmt
+}
+
+func (p *Parser) forStatement() Statement {
+	stmt := &For{Token: p.advance()}
+
+	if !p.expectPeek(LEFT_PAREN) {
+		return nil
+	}
+
+	switch p.peek().Type {
+	case SEMICOLON:
+		stmt.Initializer = nil
+		p.advance()
+	case VAR:
+		stmt.Initializer = p.varDeclaration()
+	default:
+		stmt.Initializer = p.expressionStatement()
+	}
+
+	if !p.match(SEMICOLON) {
+		stmt.Condition = p.expression()
+	}
+	if !p.expectPeek(SEMICOLON) {
+		return nil
+	}
+
+	if !p.match(RIGHT_PAREN) {
+		stmt.Increment = p.expression()
+	}
+	if !p.expectPeek(RIGHT_PAREN) {
+		return nil
+	}
+	stmt.Body = p.statement()
+
+	return stmt
 }
 
 func (p *Parser) whileStatement() Statement {

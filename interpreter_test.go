@@ -25,7 +25,73 @@ func runInterpreter(input []byte) Object {
 		return nil
 	}
 	interpreter := NewInterpreter()
-	return interpreter.Interpret(program, env)
+	return interpreter.Interpret(program, env, program)
+}
+
+func TestForLoop(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected interface{}
+	}{
+		{
+			code: `
+			var i = 0;
+			for (; i < 5; i = i + 1) {}
+			i;	
+			`,
+			expected: 5,
+		},
+		{
+			code: `
+				var sum = 0;
+				var i = 1;
+				for (; i <= 5; i = i + 1) {
+					sum = sum + i;
+					i = i + 1;
+				}
+				sum;
+			`,
+			expected: 15,
+		},
+		{
+			code: `
+				var sum = 0;
+				var i = 1;
+				for (; i <= 5; i = i + 1) {
+					if (sum == 5) {
+						break;
+					}
+					sum = sum + i;
+					i = i + 1;
+				}
+				sum;
+			`,
+			expected: 5,
+		},
+		{
+			code: `
+				var sum = 0;
+				var i = 1;
+				for (; i <= 5; i = i + 1) {
+					if (sum / 5 == 0) {
+						continue;
+					}
+					sum = sum + i;
+					i = i + 1;
+				}
+				sum;
+			`,
+			expected: 10,
+		},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if !testLiteralObject(t, result, test.expected) {
+			return
+		}
+	}
 }
 
 func TestWhileLoop(t *testing.T) {
@@ -55,35 +121,35 @@ func TestWhileLoop(t *testing.T) {
 			`,
 			expected: 15,
 		},
-		// {
-		// 	code: `
-		// 		var a = 0;
-		// 		var b = 10;
-		// 		while (a < b) {
-		// 			if (a == 5) {
-		// 				break;
-		// 			}
-		// 			a = a + 1;
-		// 		}
-		// 		a;
-		// 	`,
-		// 	expected: 5,
-		// },
-		// {
-		// 	code: `
-		// 		var i = 0;
-		// 		var result = 0;
-		// 		while (i < 5) {
-		// 			i = i + 1;
-		// 			if (i % 2 == 0) {
-		// 				continue;
-		// 			}
-		// 			result = result + i;
-		// 		}
-		// 		result;
-		// 	`,
-		// 	expected: 9, // 1 + 3 + 5
-		// },
+		{
+			code: `
+				var a = 0;
+				var b = 10;
+				while (a < b) {
+					if (a == 5) {
+						break;
+					}
+					a = a + 1;
+				}
+				a;
+			`,
+			expected: 5,
+		},
+		{
+			code: `
+				var i = 0;
+				var result = 0;
+				while (i < 5) {
+					i = i + 1;
+					if (i > 2) {
+						continue;
+					}
+					result = result + i;
+				}
+				result;
+			`,
+			expected: 3, // 1 + 3 + 5
+		},
 	}
 
 	for _, test := range tests {

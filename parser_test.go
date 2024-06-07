@@ -16,6 +16,114 @@ func createParseProgram(input string) *Program {
 	return program
 }
 
+func TestFor(t *testing.T) {
+	input := `for (var x = 5; x > 0; x = x - 1) { "hello world"; }`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("Expected length of statements to be %d, got=%d", 1, len(program.Statements))
+	}
+
+	forStmt, ok := program.Statements[0].(*For)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &For{}, program.Statements[0])
+	}
+
+	if !testVarStatement(t, forStmt.Initializer, "x", 5) {
+		return
+	}
+
+	if !testBinaryExpression(t, forStmt.Condition, "x", ">", 0) {
+		return
+	}
+
+	assignment, ok := forStmt.Increment.(*Assignment)
+	if !ok {
+		t.Fatalf("Expected=%T, got=%T", &Identifier{}, forStmt.Increment)
+	}
+
+	if assignment.Identifier.Value != "x" {
+		t.Errorf("Expected assignment value %s, got=%s", "a", assignment.Identifier.Value)
+	}
+
+	body, ok := forStmt.Body.(*BlockStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BlockStatement{}, forStmt.Body)
+	}
+
+	if len(body.Statements) != 1 {
+		t.Errorf("Expected length of statement to be %d, got=%d", 1, len(body.Statements))
+	}
+
+	expr, ok := body.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Errorf("Expected %T, got %T", &ExpressionStatement{}, body.Statements[0])
+	}
+
+	if !testLiteral(t, expr.Expression, "hello world") {
+		return
+	}
+}
+
+func TestContinueStatement(t *testing.T) {
+	input := `while (5 > 2) { continue; }`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("Expected length of statements to be %d, got=%d", 1, len(program.Statements))
+	}
+
+	whileStmt, ok := program.Statements[0].(*While)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &While{}, program.Statements[0])
+	}
+
+	body, ok := whileStmt.Body.(*BlockStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BlockStatement{}, whileStmt.Body)
+	}
+
+	breakStatement, ok := body.Statements[0].(*ContinueStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BreakStatement{}, body.Statements[0])
+	}
+
+	if breakStatement.TokenLiteral() != "continue" {
+		t.Errorf("Expected TokenLiteral to be %s, got=%s", "break", breakStatement.TokenLiteral())
+	}
+}
+
+func TestBreakStatement(t *testing.T) {
+	input := `while (5 > 2) { break; }`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("Expected length of statements to be %d, got=%d", 1, len(program.Statements))
+	}
+
+	whileStmt, ok := program.Statements[0].(*While)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &While{}, program.Statements[0])
+	}
+
+	body, ok := whileStmt.Body.(*BlockStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BlockStatement{}, whileStmt.Body)
+	}
+
+	breakStatement, ok := body.Statements[0].(*BreakStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &BreakStatement{}, body.Statements[0])
+	}
+
+	if breakStatement.TokenLiteral() != "break" {
+		t.Errorf("Expected TokenLiteral to be %s, got=%s", "break", breakStatement.TokenLiteral())
+	}
+}
+
 func TestWhile(t *testing.T) {
 	input := `while (5 > 2) { "hello world"; }`
 
@@ -143,6 +251,7 @@ func TestLogicalOr(t *testing.T) {
 		if !testLiteral(t, logicaland.Right, test.right) {
 			return
 		}
+
 	}
 }
 
