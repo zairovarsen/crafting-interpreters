@@ -9,7 +9,7 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("[Line: %d] Error: %s\n", e.Line, e.Message)
+	return fmt.Sprintf("[Line: %d], Token: %s, Error: %s\n", e.Line, e.Token.Lexeme, e.Message)
 }
 
 // Error handle struct to manager errors

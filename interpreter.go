@@ -18,6 +18,10 @@ var (
 	False = &BooleanObject{Value: false}
 )
 
+var builtins = map[string]*Builtin{
+	BuiltinFuncNamePrint: GetBuiltinByName(BuiltinFuncNamePrint),
+}
+
 // java way is terrible but whatever :)
 type Visitor interface {
 	VisitProgram(node *Program, env *Environment, parent Statement) Object
@@ -30,12 +34,10 @@ type Visitor interface {
 	VisitNilLiteral(node *NilLiteral, env *Environment, parent Statement) Object
 	VisitGroupedExpression(node *GroupedExpression, env *Environment, parent Statement) Object
 	VisitAssignment(node *Assignment, env *Environment, parent Statement) Object
-	VisitCommaExpression(node *CommaExpression, env *Environment, parent Statement) Object
 	VisitTernaryExpression(node *TernaryExpression, env *Environment, parent Statement) Object
 	VisitBlockStatement(node *BlockStatement, env *Environment, parent Statement) Object
 	VisitExpressionStatement(node *ExpressionStatement, env *Environment, parent Statement) Object
 	VisitReturnStatement(node *ReturnStatement, env *Environment, parent Statement) Object
-	VisitPrintStatement(node *PrintStatement, env *Environment, parent Statement) Object
 	VisitVarStatement(node *VarStatement, env *Environment, parent Statement) Object
 	VisitIfStatement(node *IfStatement, env *Environment, parent Statement) Object
 	VisitLogical(node *Logical, env *Environment, parent Statement) Object
@@ -43,6 +45,8 @@ type Visitor interface {
 	VisitForStatement(node *For, env *Environment, parent Statement) Object
 	VisitBreakStatement(node *BreakStatement, env *Environment, parent Statement) Object
 	VisitContinueStatement(node *ContinueStatement, env *Environment, parent Statement) Object
+	VisitCallExpression(node *CallExpression, env *Environment, parent Statement) Object
+	VisitFunctionLiteral(node *FunctionLiteral, env *Environment, parent Statement) Object
 }
 
 type Interpreter struct{}
@@ -104,6 +108,12 @@ func (i *Interpreter) isTruthy(value Object) bool {
 func (i *Interpreter) newError(format string, args ...interface{}) Object {
 	msg := fmt.Sprintf(format, args...)
 	return &ErrorObject{msg}
+}
+
+func (i *Interpreter) VisitFunctionLiteral(node *FunctionLiteral, env *Environment, parent Statement) Object {
+	function := &Function{Parameters: node.Params, Body: node.Body, Env: env}
+	env.Set(node.Token.Lexeme, function)
+	return nil
 }
 
 func (i *Interpreter) VisitContinueStatement(node *ContinueStatement, env *Environment, parent Statement) Object {
@@ -185,21 +195,19 @@ func (i *Interpreter) VisitWhileStatement(node *While, env *Environment, parent 
 	return nil
 }
 
-func (i *Interpreter) VisitPrintStatement(node *PrintStatement, env *Environment, parent Statement) Object {
-	value := node.PrintValue.Accept(i, env, parent)
-	fmt.Println(value.Inspect())
-	return nil
-}
-
 func (i *Interpreter) VisitIdentifier(node *Identifier, env *Environment, parent Statement) Object {
-	obj, ok := env.Get(node.Value)
-	if !ok {
-		return i.newError("%s: %s", identifierNotFoundError, node.Value)
+	if obj, ok := env.Get(node.Value); ok {
+		if obj.Type() == NillObj {
+			return i.newError("%s: %s", notInitialzied, node.TokenLiteral())
+		}
+		return obj
 	}
-	if obj.Type() == NillObj {
-		return i.newError("%s: %s", notInitialzied, node.TokenLiteral())
+
+	if builtin, ok := builtins[node.Value]; ok {
+		return builtin
 	}
-	return obj
+
+	return i.newError("%s: %s", identifierNotFoundError, node.Value)
 }
 
 func (i *Interpreter) VisitLogical(node *Logical, env *Environment, parent Statement) Object {
@@ -375,8 +383,61 @@ func (i *Interpreter) VisitAssignment(node *Assignment, env *Environment, parent
 	return right
 }
 
-func (i *Interpreter) VisitCommaExpression(node *CommaExpression, env *Environment, parent Statement) Object {
-	return nil
+func (i *Interpreter) VisitCallExpression(node *CallExpression, env *Environment, parent Statement) Object {
+	var arguments []Object
+	callee := node.Callee.Accept(i, env, parent)
+
+	if i.isError(callee) {
+		return i.newError("%s: %s", notFunctionError, callee.Inspect())
+	}
+
+	for _, argument := range node.Arguments {
+		result := argument.Accept(i, env, parent)
+		if i.isError(result) {
+			return nil
+		}
+		arguments = append(arguments, result)
+	}
+
+	return i.applyFunction(callee, arguments, parent)
+}
+
+func (i *Interpreter) unwrapReturnValue(obj Object) Object {
+	if returnValue, ok := obj.(*ReturnValueObject); ok {
+		return returnValue.Value
+	}
+
+	return obj
+}
+
+func (i *Interpreter) applyFunction(fn Object, args []Object, parent Statement) Object {
+	switch fn := fn.(type) {
+	case *Function:
+		if len(fn.Parameters) != len(args) {
+			return i.newError("%s: Expected %d arguments, but got %d .", invalidSyntax, len(fn.Parameters), len(args))
+		}
+		extendedEnv := i.extendedFunctionEnv(fn, args)
+		evaluated := fn.Body.Accept(i, extendedEnv, parent)
+		return i.unwrapReturnValue(evaluated)
+	case *Builtin:
+		if result := fn.Fn(args...); result != nil {
+			return result
+		} else {
+			return Null
+		}
+	default:
+		return i.newError("%s: %s", notFunctionError, fn.Type())
+	}
+}
+
+func (i *Interpreter) extendedFunctionEnv(fn *Function, args []Object) *Environment {
+	env := NewEnclosingEnvironment(fn.Env)
+
+	for paramIdx, param := range fn.Parameters {
+		env.Set(param.Value, args[paramIdx])
+	}
+
+	return env
 }
 
 func (i *Interpreter) VisitTernaryExpression(node *TernaryExpression, env *Environment, parent Statement) Object {
@@ -384,10 +445,8 @@ func (i *Interpreter) VisitTernaryExpression(node *TernaryExpression, env *Envir
 }
 
 func (i *Interpreter) VisitReturnStatement(node *ReturnStatement, env *Environment, parent Statement) Object {
-	switch parent.(type) {
-	default:
-		return i.newError("%s: %s", invalidSyntax, "Return statement not within function")
-	}
+	value := node.ReturnValue.Accept(i, env, parent)
+	return &ReturnValueObject{Value: value}
 }
 
 func (i *Interpreter) VisitProgram(node *Program, env *Environment, parent Statement) Object {

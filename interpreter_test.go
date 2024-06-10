@@ -28,6 +28,65 @@ func runInterpreter(input []byte) Object {
 	return interpreter.Interpret(program, env, program)
 }
 
+func TestReturn(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected float64
+	}{
+		{"return 10;", 10},
+		{"return 2 * 5;", 10},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if result.Type() != ReturnValueObj {
+			t.Fatalf("Expected %T, got=%T", ReturnValueObj, result.Type())
+		}
+
+		value, _ := result.(*ReturnValueObject)
+
+		if !testLiteralObject(t, value.Value, test.expected) {
+			return
+		}
+	}
+}
+
+func TestFunction(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected interface{}
+	}{
+		{
+			code: `
+				function add(a,b) {
+					print(a + b);
+				}
+				add(4,5);
+			`,
+			expected: 9,
+		},
+		{
+			code: `
+				var a = 20;
+				function add(b) {
+					print(a + b);
+				}
+				add(5)
+			`,
+			expected: 25,
+		},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if !testLiteralObject(t, result, test.expected) {
+			return
+		}
+	}
+}
+
 func TestForLoop(t *testing.T) {
 	tests := []struct {
 		code     string
@@ -297,17 +356,17 @@ func TestBlockStatements(t *testing.T) {
 					var b = "outer b";
 					{
 						var a = "inner a";
-						print a;
-						print b;
-						print c;
+						print(a);
+						print(b);
+						print(c);
 					}
-					print a;
-					print b;
-					print c;
+					print(a);
+					print(b);
+					print(c);
 				}
-				print a;
-				print b;
-				print c;
+				print(a);
+				print(b);
+				print(c);
 			`,
 			expected: "inner a\nouter b\nglobal c\nouter a\nouter b\nglobal c\nglobal a\nglobal b\nglobal c\n",
 		},

@@ -16,6 +16,73 @@ func createParseProgram(input string) *Program {
 	return program
 }
 
+func TestFuncLiteral(t *testing.T) {
+	input := `function add(a,b,c) { a + b; }`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	fun, ok := program.Statements[0].(*FunctionLiteral)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &FunctionLiteral{}, program.Statements[0])
+	}
+
+	if len(fun.Params) != 3 {
+		t.Errorf("Expected length of params to be %d, got=%d", 3, len(fun.Params))
+	}
+
+	expr, ok := fun.Body.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &ExpressionStatement{}, fun.Body.Statements[0])
+	}
+
+	if !testBinaryExpression(t, expr.Expression, "a", "+", "b") {
+		return
+	}
+}
+
+func TestCallExpression(t *testing.T) {
+	input := `add(1, 2 * 3,4 + 5);`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+	}
+
+	exp, ok := stmt.Expression.(*CallExpression)
+	if !ok {
+		t.Fatalf("Expression is not %T. got=%T", &CallExpression{}, stmt.Expression)
+	}
+
+	if !testLiteral(t, exp.Callee, "add") {
+		return
+	}
+
+	if len(exp.Arguments) != 3 {
+		t.Fatalf("wrong length of arguments. got=%d", len(exp.Arguments))
+	}
+
+	if !testLiteral(t, exp.Arguments[0], 1) {
+		return
+	}
+	if !testBinaryExpression(t, exp.Arguments[1], 2, "*", 3) {
+		return
+	}
+
+	if !testBinaryExpression(t, exp.Arguments[2], 4, "+", 5) {
+		return
+	}
+}
+
 func TestFor(t *testing.T) {
 	input := `for (var x = 5; x > 0; x = x - 1) { "hello world"; }`
 
@@ -47,18 +114,13 @@ func TestFor(t *testing.T) {
 		t.Errorf("Expected assignment value %s, got=%s", "a", assignment.Identifier.Value)
 	}
 
-	body, ok := forStmt.Body.(*BlockStatement)
-	if !ok {
-		t.Errorf("Expected %T, got=%T", &BlockStatement{}, forStmt.Body)
+	if len(forStmt.Body.Statements) != 1 {
+		t.Errorf("Expected length of statement to be %d, got=%d", 1, len(forStmt.Body.Statements))
 	}
 
-	if len(body.Statements) != 1 {
-		t.Errorf("Expected length of statement to be %d, got=%d", 1, len(body.Statements))
-	}
-
-	expr, ok := body.Statements[0].(*ExpressionStatement)
+	expr, ok := forStmt.Body.Statements[0].(*ExpressionStatement)
 	if !ok {
-		t.Errorf("Expected %T, got %T", &ExpressionStatement{}, body.Statements[0])
+		t.Errorf("Expected %T, got %T", &ExpressionStatement{}, forStmt.Body.Statements[0])
 	}
 
 	if !testLiteral(t, expr.Expression, "hello world") {
@@ -80,14 +142,9 @@ func TestContinueStatement(t *testing.T) {
 		t.Fatalf("Expected %T, got=%T", &While{}, program.Statements[0])
 	}
 
-	body, ok := whileStmt.Body.(*BlockStatement)
+	breakStatement, ok := whileStmt.Body.Statements[0].(*ContinueStatement)
 	if !ok {
-		t.Errorf("Expected %T, got=%T", &BlockStatement{}, whileStmt.Body)
-	}
-
-	breakStatement, ok := body.Statements[0].(*ContinueStatement)
-	if !ok {
-		t.Errorf("Expected %T, got=%T", &BreakStatement{}, body.Statements[0])
+		t.Errorf("Expected %T, got=%T", &BreakStatement{}, whileStmt.Body.Statements[0])
 	}
 
 	if breakStatement.TokenLiteral() != "continue" {
@@ -109,14 +166,9 @@ func TestBreakStatement(t *testing.T) {
 		t.Fatalf("Expected %T, got=%T", &While{}, program.Statements[0])
 	}
 
-	body, ok := whileStmt.Body.(*BlockStatement)
+	breakStatement, ok := whileStmt.Body.Statements[0].(*BreakStatement)
 	if !ok {
-		t.Errorf("Expected %T, got=%T", &BlockStatement{}, whileStmt.Body)
-	}
-
-	breakStatement, ok := body.Statements[0].(*BreakStatement)
-	if !ok {
-		t.Errorf("Expected %T, got=%T", &BreakStatement{}, body.Statements[0])
+		t.Errorf("Expected %T, got=%T", &BreakStatement{}, whileStmt.Body.Statements[0])
 	}
 
 	if breakStatement.TokenLiteral() != "break" {
@@ -155,18 +207,13 @@ func TestWhile(t *testing.T) {
 		return
 	}
 
-	body, ok := whileStmt.Body.(*BlockStatement)
-	if !ok {
-		t.Errorf("Expected %T, got=%T", &BlockStatement{}, whileStmt.Body)
+	if len(whileStmt.Body.Statements) != 1 {
+		t.Errorf("Expected length of statement to be %d, got=%d", 1, len(whileStmt.Body.Statements))
 	}
 
-	if len(body.Statements) != 1 {
-		t.Errorf("Expected length of statement to be %d, got=%d", 1, len(body.Statements))
-	}
-
-	expr, ok := body.Statements[0].(*ExpressionStatement)
+	expr, ok := whileStmt.Body.Statements[0].(*ExpressionStatement)
 	if !ok {
-		t.Errorf("Expected %T, got %T", &ExpressionStatement{}, body.Statements[0])
+		t.Errorf("Expected %T, got %T", &ExpressionStatement{}, whileStmt.Body.Statements[0])
 	}
 
 	if !testLiteral(t, expr.Expression, "hello world") {
@@ -366,11 +413,12 @@ func TestReturnStatement(t *testing.T) {
 		return 10;
 		return 20;
 		return 30;
+		return;
 	`
 
 	program := createParseProgram(input)
 
-	if len(program.Statements) != 3 {
+	if len(program.Statements) != 4 {
 		t.Fatalf("Expected length of statements to be %d, got=%d", 3, len(program.Statements))
 	}
 

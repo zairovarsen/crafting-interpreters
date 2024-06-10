@@ -8,7 +8,14 @@ equality       -> comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           -> factor ( ( "-" | "+" ) factor )* ;
 factor         -> unary ( ( "/" | "*" ) unary )* ;
-unary          -> ( "!" | "-" ) unary | primary ;
+unary          -> ( "!" | "-" ) unary | call
+
+call -> primary ( "(" arguments? ")" )* ;
+arguments -> expression( "," expression )* ;
+
+funDecl -> "function" func; 
+func -> IDENTIFIER "(" parameters? ")" block;
+
 primary        -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | ternary ;
 ternary        -> equality "?" expression ":" ternary ;
 comma          -> ternary ( "," ternary )* ;
@@ -18,8 +25,9 @@ program -> declaration* EOF ;
 declaration -> varDecl | statement ;
 
 varDecl -> "var" IDENTIFIER ( "=" expression )? ";" ;
-statement -> exprStmt | printStmt | block | ifStmt | whileStmt | forStmt ;
+statement -> exprStmt | printStmt | block | ifStmt | whileStmt | forStmt | returnStmt;
 
+returnStmt -> "return" expression? ";" ;
 forStmt -> "for" "(" (varDecl | exprStmt | ";")
 expression? ";" 
 expression? ")" statement ;

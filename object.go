@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type ObjectType string
 
@@ -20,6 +23,15 @@ const (
 	CompiledFunctionObj = "CompiledFunction"
 	ClosureObj          = "Closure"
 )
+
+type BuiltinFunction func(args ...Object) Object
+
+type Builtin struct {
+	Fn BuiltinFunction
+}
+
+func (b *Builtin) Type() ObjectType { return BuiltinObj }
+func (b *Builtin) Inspect() string  { return "builtin function" }
 
 type Object interface {
 	Type() ObjectType
@@ -76,3 +88,28 @@ type ReturnValueObject struct {
 
 func (r *ReturnValueObject) Type() ObjectType { return ReturnValueObj }
 func (r *ReturnValueObject) Inspect() string  { return r.Value.Inspect() }
+
+type Function struct {
+	Parameters []*Identifier
+	Body       *BlockStatement
+	Env        *Environment
+}
+
+func (f *Function) Type() ObjectType { return FunctionObj }
+func (f *Function) Inspect() string {
+	var str strings.Builder
+
+	var params []string
+	for _, p := range f.Parameters {
+		params = append(params, p.String())
+	}
+
+	str.WriteString("function")
+	str.WriteString("(")
+	str.WriteString(strings.Join(params, ", "))
+	str.WriteString(") {\n")
+	str.WriteString(f.Body.String())
+	str.WriteString("\n}")
+
+	return str.String()
+}

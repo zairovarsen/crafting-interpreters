@@ -63,8 +63,8 @@ func (is *IfStatement) String() string {
 	var str strings.Builder
 
 	str.WriteString(is.TokenLiteral())
-	str.WriteString(" ( " + is.Condition.String() + " ) {\n")
-	str.WriteString(is.ThenBranch.String() + "} ")
+	str.WriteString(LEFT_PAREN + is.Condition.String() + RIGHT_PAREN + " " + LEFT_BRACKET + "\n")
+	str.WriteString(is.ThenBranch.String() + RIGHT_BRACKET + " ")
 
 	if is.ElseBranch != nil {
 		str.WriteString("else {\n")
@@ -78,6 +78,34 @@ func (is *IfStatement) TokenLiteral() string {
 }
 func (is *IfStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
 	return visitor.VisitIfStatement(is, env, parent)
+}
+
+type FunctionLiteral struct {
+	Token  Token // ( token
+	Params []*Identifier
+	Body   *BlockStatement
+}
+
+func (fl *FunctionLiteral) statementNode()       {}
+func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Lexeme }
+func (fl *FunctionLiteral) String() string {
+	var str strings.Builder
+
+	var params []string
+	for _, p := range fl.Params {
+		params = append(params, p.String())
+	}
+
+	str.WriteString(fl.TokenLiteral())
+	str.WriteString(LEFT_PAREN)
+	str.WriteString(strings.Join(params, COMMA+" "))
+	str.WriteString(RIGHT_PAREN)
+	str.WriteString(fl.Body.String())
+
+	return str.String()
+}
+func (fl *FunctionLiteral) Accept(visitor Visitor, env *Environment, parent Statement) Object {
+	return visitor.VisitFunctionLiteral(fl, env, parent)
 }
 
 type ExpressionStatement struct {
@@ -144,30 +172,6 @@ func (b *BlockStatement) Accept(visitor Visitor, env *Environment, parent Statem
 	return visitor.VisitBlockStatement(b, env, parent)
 }
 
-type PrintStatement struct {
-	Token      Token
-	PrintValue Expression
-}
-
-func (p *PrintStatement) statementNode() {}
-func (p *PrintStatement) TokenLiteral() string {
-	return p.Token.Lexeme
-}
-func (p *PrintStatement) String() string {
-	var str strings.Builder
-
-	str.WriteString(p.TokenLiteral() + " ")
-
-	if p.PrintValue != nil {
-		str.WriteString(p.PrintValue.String())
-	}
-
-	return str.String()
-}
-func (p *PrintStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitPrintStatement(p, env, parent)
-}
-
 type ContinueStatement struct {
 	Token Token
 }
@@ -230,29 +234,31 @@ func (r *ReturnStatement) Accept(visitor Visitor, env *Environment, parent State
 	return visitor.VisitReturnStatement(r, env, parent)
 }
 
-type CommaExpression struct {
-	Token      Token
-	Expression []Expression
+type CallExpression struct {
+	Token     Token // '(' token
+	Callee    Expression
+	Arguments []Expression
 }
 
-func (ce *CommaExpression) expressionNode() {}
-func (ce *CommaExpression) TokenLiteral() string {
-	return ce.Token.Lexeme
-}
-func (ce *CommaExpression) String() string {
+func (ce *CallExpression) expressionNode()      {}
+func (ce *CallExpression) TokenLiteral() string { return ce.Token.Lexeme }
+func (ce *CallExpression) String() string {
 	var str strings.Builder
 
-	for i, e := range ce.Expression {
-		str.WriteString(e.String())
-		if i != len(ce.Expression)-1 {
-			str.WriteString(" , ")
-		}
+	var args []string
+	for _, a := range ce.Arguments {
+		args = append(args, a.String())
 	}
+
+	str.WriteString(ce.Callee.String())
+	str.WriteString(LEFT_PAREN)
+	str.WriteString(strings.Join(args, COMMA+" "))
+	str.WriteString(RIGHT_PAREN)
 
 	return str.String()
 }
-func (ce *CommaExpression) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitCommaExpression(ce, env, parent)
+func (ce *CallExpression) Accept(visitor Visitor, env *Environment, parent Statement) Object {
+	return visitor.VisitCallExpression(ce, env, parent)
 }
 
 type TernaryExpression struct {
@@ -482,7 +488,7 @@ type For struct {
 	Initializer Statement
 	Condition   Expression
 	Increment   Expression
-	Body        Statement
+	Body        *BlockStatement
 }
 
 func (f *For) TokenLiteral() string {
@@ -511,7 +517,7 @@ func (f *For) Accept(visitor Visitor, env *Environment, parent Statement) Object
 type While struct {
 	Token     Token
 	Condition Expression
-	Body      Statement
+	Body      *BlockStatement
 }
 
 func (w *While) TokenLiteral() string {

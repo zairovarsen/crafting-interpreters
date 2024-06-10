@@ -8,58 +8,57 @@ type TokenType string
 
 const (
 	// Single character tokens
-	LEFT_PAREN    TokenType = "("
-	RIGHT_PAREN   TokenType = ")"
-	LEFT_BRACE    TokenType = "["
-	RIGHT_BRACE   TokenType = "]"
-	LEFT_BRACKET  TokenType = "{"
-	RIGHT_BRACKET TokenType = "}"
-	COMMA         TokenType = ","
-	DOT           TokenType = "."
-	MINUS         TokenType = "-"
-	PLUS          TokenType = "+"
-	SEMICOLON     TokenType = ";"
-	SLASH         TokenType = "/"
-	STAR          TokenType = "*"
-	QUESTION      TokenType = "?"
-	COLON         TokenType = ":"
+	LEFT_PAREN    = "("
+	RIGHT_PAREN   = ")"
+	LEFT_BRACE    = "["
+	RIGHT_BRACE   = "]"
+	LEFT_BRACKET  = "{"
+	RIGHT_BRACKET = "}"
+	COMMA         = ","
+	DOT           = "."
+	MINUS         = "-"
+	PLUS          = "+"
+	SEMICOLON     = ";"
+	SLASH         = "/"
+	STAR          = "*"
+	QUESTION      = "?"
+	COLON         = ":"
 
 	// One or two character tokens.
-	BANG          TokenType = "!"
-	BANG_EQUAL    TokenType = "!="
-	EQUAL         TokenType = "="
-	EQUAL_EQUAL   TokenType = "=="
-	GREATER       TokenType = ">"
-	GREATER_EQUAL TokenType = ">="
-	LESS          TokenType = "<"
-	LESS_EQUAL    TokenType = "<="
+	BANG          = "!"
+	BANG_EQUAL    = "!="
+	EQUAL         = "="
+	EQUAL_EQUAL   = "=="
+	GREATER       = ">"
+	GREATER_EQUAL = ">="
+	LESS          = "<"
+	LESS_EQUAL    = "<="
 
 	// Literals.
-	IDENTIFIER TokenType = "IDENTIFIER"
-	STRING     TokenType = "STRING"
-	NUMBER     TokenType = "NUMBER"
+	IDENTIFIER = "IDENTIFIER"
+	STRING     = "STRING"
+	NUMBER     = "NUMBER"
 
 	// Keywords.
-	AND      TokenType = "AND"
-	CLASS    TokenType = "CLASS"
-	ELSE     TokenType = "ELSE"
-	FALSE    TokenType = "FALSE"
-	FUN      TokenType = "FUNCTION"
-	FOR      TokenType = "FOR"
-	IF       TokenType = "IF"
-	NIL      TokenType = "NIL"
-	OR       TokenType = "OR"
-	PRINT    TokenType = "PRINT"
-	RETURN   TokenType = "RETURN"
-	SUPER    TokenType = "SUPER"
-	THIS     TokenType = "THIS"
-	TRUE     TokenType = "TRUE"
-	VAR      TokenType = "VAR"
-	WHILE    TokenType = "WHILE"
-	BREAK    TokenType = "BREAK"
-	CONTINUE TokenType = "CONTINUE"
+	AND      = "AND"
+	CLASS    = "CLASS"
+	ELSE     = "ELSE"
+	FALSE    = "FALSE"
+	FUNCTION = "FUNCTION"
+	FOR      = "FOR"
+	IF       = "IF"
+	NIL      = "NIL"
+	OR       = "OR"
+	RETURN   = "RETURN"
+	SUPER    = "SUPER"
+	THIS     = "THIS"
+	TRUE     = "TRUE"
+	VAR      = "VAR"
+	WHILE    = "WHILE"
+	BREAK    = "BREAK"
+	CONTINUE = "CONTINUE"
 
-	EOF TokenType = "EOF"
+	EOF = "EOF"
 )
 
 var reserved = map[string]TokenType{
@@ -69,10 +68,9 @@ var reserved = map[string]TokenType{
 	"else":     ELSE,
 	"false":    FALSE,
 	"for":      FOR,
-	"fun":      FUN,
+	"function": FUNCTION,
 	"if":       IF,
 	"nil":      NIL,
-	"print":    PRINT,
 	"return":   RETURN,
 	"super":    SUPER,
 	"this":     THIS,

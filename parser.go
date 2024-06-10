@@ -81,6 +81,8 @@ func (p *Parser) parse() *Program {
 
 func (p *Parser) declaration() Statement {
 	switch p.peek().Type {
+	case FUNCTION:
+		return p.functionLiteral()
 	case VAR:
 		return p.varDeclaration()
 	default:
@@ -102,8 +104,6 @@ func (p *Parser) statement() Statement {
 		return p.block()
 	case IF:
 		return p.ifStatement()
-	case PRINT:
-		return p.printStatement()
 	case RETURN:
 		return p.returnStatement()
 	default:
@@ -111,7 +111,27 @@ func (p *Parser) statement() Statement {
 	}
 }
 
-func (p *Parser) breakStatement() Statement {
+func (p *Parser) functionLiteral() *FunctionLiteral {
+	p.advance()
+	fun := &FunctionLiteral{}
+
+	if !p.expectPeek(IDENTIFIER) {
+		return nil
+	}
+
+	fun.Token = p.previous()
+
+	if !p.expectPeek(LEFT_PAREN) {
+		return nil
+	}
+
+	fun.Params = p.parseFunctionParams()
+	fun.Body = p.block()
+
+	return fun
+}
+
+func (p *Parser) breakStatement() *BreakStatement {
 	stmt := &BreakStatement{Token: p.advance()}
 
 	if !p.expectPeek(SEMICOLON) {
@@ -121,7 +141,7 @@ func (p *Parser) breakStatement() Statement {
 	return stmt
 }
 
-func (p *Parser) continueStatement() Statement {
+func (p *Parser) continueStatement() *ContinueStatement {
 	stmt := &ContinueStatement{Token: p.advance()}
 
 	if !p.expectPeek(SEMICOLON) {
@@ -131,7 +151,7 @@ func (p *Parser) continueStatement() Statement {
 	return stmt
 }
 
-func (p *Parser) forStatement() Statement {
+func (p *Parser) forStatement() *For {
 	stmt := &For{Token: p.advance()}
 
 	if !p.expectPeek(LEFT_PAREN) {
@@ -161,12 +181,12 @@ func (p *Parser) forStatement() Statement {
 	if !p.expectPeek(RIGHT_PAREN) {
 		return nil
 	}
-	stmt.Body = p.statement()
+	stmt.Body = p.block()
 
 	return stmt
 }
 
-func (p *Parser) whileStatement() Statement {
+func (p *Parser) whileStatement() *While {
 	stmt := &While{Token: p.advance()}
 	if !p.expectPeek(LEFT_PAREN) {
 		return nil
@@ -175,12 +195,12 @@ func (p *Parser) whileStatement() Statement {
 	if !p.expectPeek(RIGHT_PAREN) {
 		return nil
 	}
-	stmt.Body = p.statement()
+	stmt.Body = p.block()
 
 	return stmt
 }
 
-func (p *Parser) ifStatement() Statement {
+func (p *Parser) ifStatement() *IfStatement {
 	stmt := &IfStatement{Token: p.advance()}
 	if !p.expectPeek(LEFT_PAREN) {
 		return nil
@@ -199,7 +219,7 @@ func (p *Parser) ifStatement() Statement {
 	return stmt
 }
 
-func (p *Parser) block() Statement {
+func (p *Parser) block() *BlockStatement {
 	blockStmt := &BlockStatement{Token: p.advance()}
 	statements := make([]Statement, 0)
 
@@ -218,7 +238,7 @@ func (p *Parser) block() Statement {
 	return blockStmt
 }
 
-func (p *Parser) varDeclaration() Statement {
+func (p *Parser) varDeclaration() *VarStatement {
 	stmt := &VarStatement{Token: p.advance()}
 
 	if !p.expectPeek(IDENTIFIER) {
@@ -245,19 +265,14 @@ func (p *Parser) varDeclaration() Statement {
 	return stmt
 }
 
-func (p *Parser) printStatement() Statement {
-	stmt := &PrintStatement{Token: p.advance()}
-
-	stmt.PrintValue = p.expression()
-
-	if !p.expectPeek(SEMICOLON) {
-		return nil
-	}
-	return stmt
-}
-
-func (p *Parser) returnStatement() Statement {
+func (p *Parser) returnStatement() *ReturnStatement {
 	stmt := &ReturnStatement{Token: p.advance()}
+
+	if p.check(SEMICOLON) {
+		p.advance()
+		stmt.ReturnValue = nil
+		return stmt
+	}
 
 	stmt.ReturnValue = p.expression()
 
@@ -300,7 +315,7 @@ func (p *Parser) synchronize() {
 		}
 
 		switch p.peek().Type {
-		case CLASS, FUN, VAR, FOR, IF, WHILE, PRINT, RETURN:
+		case CLASS, FUNCTION, VAR, FOR, IF, WHILE, RETURN:
 			return
 		}
 
@@ -346,6 +361,79 @@ func (p *Parser) primary() Expression {
 	return nil
 }
 
+func (p *Parser) parseExpressionList(end TokenType) []Expression {
+	var list []Expression
+
+	if p.peek().Type == end {
+		p.advance()
+		return list
+	}
+
+	list = append(list, p.expression())
+
+	for p.match(COMMA) {
+		list = append(list, p.expression())
+		if len(list) >= 255 {
+			err := &Error{Token: p.peek(), Message: "Can't have more than 255 arguments", Line: p.peek().Line}
+			p.addError(err)
+			return nil
+		}
+	}
+
+	if !p.expectPeek(end) {
+		return nil
+	}
+
+	return list
+}
+
+func (p *Parser) parseFunctionParams() []*Identifier {
+	var identifiers []*Identifier
+
+	if p.check(RIGHT_PAREN) {
+		p.advance()
+		return identifiers
+	}
+
+	if !p.expectPeek(IDENTIFIER) {
+		return nil
+	}
+
+	identifier := &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+	identifiers = append(identifiers, identifier)
+
+	for p.match(COMMA) {
+		if len(identifiers) >= 255 {
+			p.addError(&Error{Message: "Can't have more than 255 parameters", Line: p.peek().Line})
+			return nil
+		}
+		if !p.expectPeek(IDENTIFIER) {
+			return nil
+		}
+		identifier := &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+		identifiers = append(identifiers, identifier)
+	}
+
+	if !p.expectPeek(RIGHT_PAREN) {
+		return nil
+	}
+
+	return identifiers
+}
+
+func (p *Parser) call() Expression {
+	expr := p.primary()
+
+	for p.match(LEFT_PAREN) {
+		operator := p.previous()
+		exp := &CallExpression{Token: operator, Callee: expr}
+		exp.Arguments = p.parseExpressionList(RIGHT_PAREN)
+		return exp
+	}
+
+	return expr
+}
+
 func (p *Parser) unary() Expression {
 	for p.match(BANG, MINUS) {
 		operator := p.previous()
@@ -357,7 +445,7 @@ func (p *Parser) unary() Expression {
 		}
 	}
 
-	return p.primary()
+	return p.call()
 }
 
 func (p *Parser) factor() Expression {
@@ -508,17 +596,6 @@ func (p *Parser) assignment() Expression {
 	return expr
 }
 
-func (p *Parser) comma() Expression {
-	expr := p.assignment()
-
-	for p.match(COMMA) {
-		right := p.assignment()
-		expr = &CommaExpression{Expression: []Expression{expr, right}}
-	}
-
-	return expr
-}
-
 func (p *Parser) expression() Expression {
-	return p.comma()
+	return p.assignment()
 }
