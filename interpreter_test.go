@@ -25,7 +25,7 @@ func runInterpreter(input []byte) Object {
 		return nil
 	}
 	interpreter := NewInterpreter()
-	return interpreter.Interpret(program, env, program)
+	return interpreter.Interpret(program, env)
 }
 
 func TestReturn(t *testing.T) {

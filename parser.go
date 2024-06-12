@@ -82,7 +82,7 @@ func (p *Parser) parse() *Program {
 func (p *Parser) declaration() Statement {
 	switch p.peek().Type {
 	case FUNCTION:
-		return p.functionLiteral()
+		return p.functionDeclaration()
 	case VAR:
 		return p.varDeclaration()
 	default:
@@ -111,15 +111,14 @@ func (p *Parser) statement() Statement {
 	}
 }
 
-func (p *Parser) functionLiteral() *FunctionLiteral {
-	p.advance()
-	fun := &FunctionLiteral{}
+func (p *Parser) functionDeclaration() *FunctionDeclaration {
+	fun := &FunctionDeclaration{Token: p.advance()}
 
 	if !p.expectPeek(IDENTIFIER) {
 		return nil
 	}
 
-	fun.Token = p.previous()
+	fun.Name = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
 
 	if !p.expectPeek(LEFT_PAREN) {
 		return nil
@@ -355,6 +354,23 @@ func (p *Parser) primary() Expression {
 			Token: p.previous(),
 			Value: p.previous().Lexeme,
 		}
+	}
+	if p.match(FUNCTION) {
+		fun := &FunctionLiteral{Token: p.previous()}
+
+		if p.check(IDENTIFIER) {
+			p.advance()
+			fun.Name = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+		}
+
+		if !p.expectPeek(LEFT_PAREN) {
+			return nil
+		}
+
+		fun.Params = p.parseFunctionParams()
+		fun.Body = p.block()
+
+		return fun
 	}
 
 	p.addError(&Error{Message: "Expect expression.", Line: p.previous().Line})

@@ -8,7 +8,7 @@ import (
 type Node interface {
 	String() string
 	TokenLiteral() string
-	Accept(visitor Visitor, env *Environment, parent Statement) Object
+	Accept(visitor Visitor, env *Environment) Object
 }
 
 // Expression
@@ -47,8 +47,8 @@ func (p *Program) TokenLiteral() string {
 func (p *Program) statementNode() {}
 
 // either returns nil object or error object
-func (p *Program) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitProgram(p, env, parent)
+func (p *Program) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitProgram(p, env)
 }
 
 type IfStatement struct {
@@ -76,17 +76,48 @@ func (is *IfStatement) String() string {
 func (is *IfStatement) TokenLiteral() string {
 	return is.Token.Lexeme
 }
-func (is *IfStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitIfStatement(is, env, parent)
+func (is *IfStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitIfStatement(is, env)
 }
 
-type FunctionLiteral struct {
+type FunctionDeclaration struct {
 	Token  Token // ( token
+	Name   *Identifier
 	Params []*Identifier
 	Body   *BlockStatement
 }
 
-func (fl *FunctionLiteral) statementNode()       {}
+func (fl *FunctionDeclaration) statementNode()       {}
+func (fl *FunctionDeclaration) TokenLiteral() string { return fl.Token.Lexeme }
+func (fl *FunctionDeclaration) String() string {
+	var str strings.Builder
+
+	var params []string
+	for _, p := range fl.Params {
+		params = append(params, p.String())
+	}
+
+	str.WriteString(fl.TokenLiteral())
+	str.WriteString(fl.Name.String())
+	str.WriteString(LEFT_PAREN)
+	str.WriteString(strings.Join(params, COMMA+" "))
+	str.WriteString(RIGHT_PAREN)
+	str.WriteString(fl.Body.String())
+
+	return str.String()
+}
+func (fl *FunctionDeclaration) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitFunctionDeclaration(fl, env)
+}
+
+type FunctionLiteral struct {
+	Token  Token // ( token
+	Name   *Identifier
+	Params []*Identifier
+	Body   *BlockStatement
+}
+
+func (fl *FunctionLiteral) expressionNode()      {}
 func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Lexeme }
 func (fl *FunctionLiteral) String() string {
 	var str strings.Builder
@@ -97,6 +128,7 @@ func (fl *FunctionLiteral) String() string {
 	}
 
 	str.WriteString(fl.TokenLiteral())
+	str.WriteString(fl.Name.String())
 	str.WriteString(LEFT_PAREN)
 	str.WriteString(strings.Join(params, COMMA+" "))
 	str.WriteString(RIGHT_PAREN)
@@ -104,8 +136,8 @@ func (fl *FunctionLiteral) String() string {
 
 	return str.String()
 }
-func (fl *FunctionLiteral) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitFunctionLiteral(fl, env, parent)
+func (fl *FunctionLiteral) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitFunctionLiteral(fl, env)
 }
 
 type ExpressionStatement struct {
@@ -120,8 +152,8 @@ func (es *ExpressionStatement) String() string {
 func (es *ExpressionStatement) TokenLiteral() string {
 	return es.Token.Lexeme
 }
-func (es *ExpressionStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitExpressionStatement(es, env, parent)
+func (es *ExpressionStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitExpressionStatement(es, env)
 }
 
 type VarStatement struct {
@@ -146,8 +178,8 @@ func (vs *VarStatement) String() string {
 func (vs *VarStatement) TokenLiteral() string {
 	return vs.Token.Lexeme
 }
-func (vs *VarStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitVarStatement(vs, env, parent)
+func (vs *VarStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitVarStatement(vs, env)
 }
 
 type BlockStatement struct {
@@ -168,8 +200,8 @@ func (b *BlockStatement) String() string {
 func (b *BlockStatement) TokenLiteral() string {
 	return b.Token.Lexeme
 }
-func (b *BlockStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitBlockStatement(b, env, parent)
+func (b *BlockStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitBlockStatement(b, env)
 }
 
 type ContinueStatement struct {
@@ -187,8 +219,8 @@ func (c *ContinueStatement) String() string {
 
 	return str.String()
 }
-func (c *ContinueStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitContinueStatement(c, env, parent)
+func (c *ContinueStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitContinueStatement(c, env)
 }
 
 type BreakStatement struct {
@@ -206,8 +238,8 @@ func (b *BreakStatement) String() string {
 
 	return str.String()
 }
-func (b *BreakStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitBreakStatement(b, env, parent)
+func (b *BreakStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitBreakStatement(b, env)
 }
 
 type ReturnStatement struct {
@@ -230,8 +262,8 @@ func (r *ReturnStatement) String() string {
 
 	return str.String()
 }
-func (r *ReturnStatement) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitReturnStatement(r, env, parent)
+func (r *ReturnStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitReturnStatement(r, env)
 }
 
 type CallExpression struct {
@@ -257,8 +289,8 @@ func (ce *CallExpression) String() string {
 
 	return str.String()
 }
-func (ce *CallExpression) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitCallExpression(ce, env, parent)
+func (ce *CallExpression) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitCallExpression(ce, env)
 }
 
 type TernaryExpression struct {
@@ -283,8 +315,8 @@ func (te *TernaryExpression) String() string {
 
 	return str.String()
 }
-func (te *TernaryExpression) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitTernaryExpression(te, env, parent)
+func (te *TernaryExpression) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitTernaryExpression(te, env)
 }
 
 type Assignment struct {
@@ -306,8 +338,8 @@ func (a *Assignment) String() string {
 
 	return str.String()
 }
-func (a *Assignment) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitAssignment(a, env, parent)
+func (a *Assignment) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitAssignment(a, env)
 }
 
 type Identifier struct {
@@ -320,8 +352,8 @@ func (i *Identifier) TokenLiteral() string {
 	return i.Token.Lexeme
 }
 func (i *Identifier) String() string { return i.Value }
-func (i *Identifier) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitIdentifier(i, env, parent)
+func (i *Identifier) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitIdentifier(i, env)
 }
 
 type GroupedExpression struct {
@@ -333,8 +365,8 @@ func (g *GroupedExpression) expressionNode() {}
 func (g *GroupedExpression) TokenLiteral() string {
 	return g.Token.Lexeme
 }
-func (g *GroupedExpression) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitGroupedExpression(g, env, parent)
+func (g *GroupedExpression) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitGroupedExpression(g, env)
 }
 func (g *GroupedExpression) String() string {
 	var str strings.Builder
@@ -353,8 +385,8 @@ func (bl *BooleanLiteral) expressionNode() {}
 func (bl *BooleanLiteral) TokenLiteral() string {
 	return bl.Token.Lexeme
 }
-func (bl *BooleanLiteral) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitBooleanLiteral(bl, env, parent)
+func (bl *BooleanLiteral) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitBooleanLiteral(bl, env)
 }
 func (bl *BooleanLiteral) String() string {
 	return fmt.Sprintf("%t", bl.Value)
@@ -371,8 +403,8 @@ func (nl *NilLiteral) TokenLiteral() string {
 func (nl *NilLiteral) String() string {
 	return "nil"
 }
-func (nl *NilLiteral) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitNilLiteral(nl, env, parent)
+func (nl *NilLiteral) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitNilLiteral(nl, env)
 }
 
 type NumberLiteral struct {
@@ -384,8 +416,8 @@ func (nl *NumberLiteral) expressionNode() {}
 func (nl *NumberLiteral) TokenLiteral() string {
 	return nl.Token.Lexeme
 }
-func (nl *NumberLiteral) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitNumberLiteral(nl, env, parent)
+func (nl *NumberLiteral) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitNumberLiteral(nl, env)
 }
 func (nl *NumberLiteral) String() string {
 	return fmt.Sprintf("%g", nl.Value)
@@ -400,8 +432,8 @@ func (sl *StringLiteral) expressionNode() {}
 func (sl *StringLiteral) TokenLiteral() string {
 	return sl.Token.Lexeme
 }
-func (sl *StringLiteral) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitStringLiteral(sl, env, parent)
+func (sl *StringLiteral) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitStringLiteral(sl, env)
 }
 func (sl *StringLiteral) String() string {
 	return fmt.Sprintf("%q", sl.Value)
@@ -427,8 +459,8 @@ func (u *Unary) String() string {
 
 	return str.String()
 }
-func (u *Unary) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitUnary(u, env, parent)
+func (u *Unary) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitUnary(u, env)
 }
 
 type Binary struct {
@@ -453,8 +485,8 @@ func (b *Binary) String() string {
 
 	return str.String()
 }
-func (b *Binary) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitBinary(b, env, parent)
+func (b *Binary) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitBinary(b, env)
 }
 
 type Logical struct {
@@ -479,8 +511,8 @@ func (l *Logical) String() string {
 
 	return str.String()
 }
-func (l *Logical) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitLogical(l, env, parent)
+func (l *Logical) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitLogical(l, env)
 }
 
 type For struct {
@@ -510,8 +542,8 @@ func (f *For) String() string {
 
 	return str.String()
 }
-func (f *For) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitForStatement(f, env, parent)
+func (f *For) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitForStatement(f, env)
 }
 
 type While struct {
@@ -535,6 +567,6 @@ func (w *While) String() string {
 
 	return str.String()
 }
-func (w *While) Accept(visitor Visitor, env *Environment, parent Statement) Object {
-	return visitor.VisitWhileStatement(w, env, parent)
+func (w *While) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitWhileStatement(w, env)
 }

@@ -16,7 +16,36 @@ func createParseProgram(input string) *Program {
 	return program
 }
 
-func TestFuncLiteral(t *testing.T) {
+func TestFunctionLiteral(t *testing.T) {
+	input := `add(function(a) { print(a); });`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	expr, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+	}
+
+	call, ok := expr.Expression.(*CallExpression)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &CallExpression{}, program.Statements[0])
+	}
+
+	fun, ok := call.Arguments[0].(*FunctionLiteral)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &FunctionLiteral{}, call.Arguments[0])
+	}
+
+	if testLiteral(t, fun.Params[0], "a") {
+		return
+	}
+}
+
+func TestFuncDeclaration(t *testing.T) {
 	input := `function add(a,b,c) { a + b; }`
 
 	program := createParseProgram(input)
@@ -25,7 +54,7 @@ func TestFuncLiteral(t *testing.T) {
 		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
 	}
 
-	fun, ok := program.Statements[0].(*FunctionLiteral)
+	fun, ok := program.Statements[0].(*FunctionDeclaration)
 	if !ok {
 		t.Fatalf("Expected %T, got=%T", &FunctionLiteral{}, program.Statements[0])
 	}

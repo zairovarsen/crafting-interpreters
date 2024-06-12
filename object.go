@@ -92,7 +92,7 @@ func (r *ReturnValueObject) Inspect() string  { return r.Value.Inspect() }
 type Function struct {
 	Parameters []*Identifier
 	Body       *BlockStatement
-	Env        *Environment
+	Env        *Environment // capture current environment for closures
 }
 
 func (f *Function) Type() ObjectType { return FunctionObj }
