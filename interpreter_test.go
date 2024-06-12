@@ -28,25 +28,30 @@ func runInterpreter(input []byte) Object {
 	return interpreter.Interpret(program, env)
 }
 
-func TestReturn(t *testing.T) {
+func TestRecursion(t *testing.T) {
 	tests := []struct {
 		code     string
 		expected float64
 	}{
-		{"return 10;", 10},
-		{"return 2 * 5;", 10},
+		{
+			`function fib(a) {
+	  if (a == 0) {
+	    return 0;
+	  } else if (a == 1) {
+	    return 1;
+	  } else {
+	    return fib(a - 2) + fib(a - 1);
+	  }
+	}
+	fib(10);`,
+			55,
+		},
 	}
 
 	for _, test := range tests {
 		result := runInterpreter([]byte(test.code))
 
-		if result.Type() != ReturnValueObj {
-			t.Fatalf("Expected %T, got=%T", ReturnValueObj, result.Type())
-		}
-
-		value, _ := result.(*ReturnValueObject)
-
-		if !testLiteralObject(t, value.Value, test.expected) {
+		if !testLiteralObject(t, result, test.expected) {
 			return
 		}
 	}
@@ -249,6 +254,25 @@ func TestLogicalOrConditional(t *testing.T) {
 		{"0 or false;", false},
 		{`"hello world" or true;`, "hello world"},
 		{"true and 5 or false;", 5},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if !testLiteralObject(t, result, test.expected) {
+			return
+		}
+	}
+}
+
+func TestTernaryConditional(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected interface{}
+	}{
+		{"true ? 5 : 10", 5},
+		{`false ? 5 : "hello world"`, "hello world"},
+		{`5 ? 10 : 15`, 10},
 	}
 
 	for _, test := range tests {

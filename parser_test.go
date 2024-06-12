@@ -16,6 +16,65 @@ func createParseProgram(input string) *Program {
 	return program
 }
 
+func TestClassStatement(t *testing.T) {
+	input := `class Breakfast {
+		cook() {
+			print("Eggs");
+		}
+
+		serve(who) {
+			print("Enjoy your breakfast, " + who + ".");
+		}
+	}`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	class, ok := program.Statements[0].(*ClassStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ClassStatement{}, program.Statements[0])
+	}
+
+	if len(class.Methods) != 2 {
+		t.Errorf("Expected %d methods in class, got=%d\n", 2, len(class.Methods))
+	}
+}
+
+func TestTernary(t *testing.T) {
+	input := `var a = true ? 5 : "hello world";`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	varStatement, ok := program.Statements[0].(*VarStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &VarStatement{}, program.Statements[0])
+	}
+
+	expr, ok := varStatement.Expression.(*TernaryExpression)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &TernaryExpression{}, varStatement.Expression)
+	}
+
+	if !testLiteral(t, expr.Condition, true) {
+		return
+	}
+
+	if !testLiteral(t, expr.ThenBranch, 5) {
+		return
+	}
+
+	if !testLiteral(t, expr.ElseBranch, "hello world") {
+		return
+	}
+}
+
 func TestFunctionLiteral(t *testing.T) {
 	input := `add(function(a) { print(a); });`
 

@@ -64,23 +64,24 @@ func (p *Parser) advance() Token {
 
 func (p *Parser) parse() *Program {
 	program := &Program{}
-	stmts := make([]Statement, 0)
 
 	for !p.isAtEnd() {
 		stmt := p.declaration()
 		if stmt != nil {
-			stmts = append(stmts, stmt)
+			program.Statements = append(program.Statements, stmt)
 		} else {
 			// try to return back to some normal usable state
 			p.synchronize()
 		}
 	}
-	program.Statements = stmts
+
 	return program
 }
 
 func (p *Parser) declaration() Statement {
 	switch p.peek().Type {
+	case CLASS:
+		return p.classDeclaration()
 	case FUNCTION:
 		return p.functionDeclaration()
 	case VAR:
@@ -111,8 +112,38 @@ func (p *Parser) statement() Statement {
 	}
 }
 
+func (p *Parser) classDeclaration() *ClassStatement {
+	class := &ClassStatement{Token: p.advance()}
+
+	if !p.expectPeek(IDENTIFIER) {
+		return nil
+	}
+
+	class.Name = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+
+	if !p.expectPeek(LEFT_BRACKET) {
+		return nil
+	}
+
+	for !p.isAtEnd() && !p.check(RIGHT_BRACKET) {
+		method := p.parseMethodDeclaration()
+		if method != nil {
+			class.Methods = append(class.Methods, method)
+			continue
+		}
+		return nil
+	}
+
+	if !p.expectPeek(RIGHT_BRACKET) {
+		return nil
+	}
+
+	return class
+}
+
 func (p *Parser) functionDeclaration() *FunctionDeclaration {
-	fun := &FunctionDeclaration{Token: p.advance()}
+	fun := &FunctionDeclaration{}
+	fun.Token = p.advance()
 
 	if !p.expectPeek(IDENTIFIER) {
 		return nil
@@ -220,12 +251,11 @@ func (p *Parser) ifStatement() *IfStatement {
 
 func (p *Parser) block() *BlockStatement {
 	blockStmt := &BlockStatement{Token: p.advance()}
-	statements := make([]Statement, 0)
 
 	for !p.check(RIGHT_BRACKET) && !p.isAtEnd() {
 		stmt := p.declaration()
 		if stmt != nil {
-			statements = append(statements, stmt)
+			blockStmt.Statements = append(blockStmt.Statements, stmt)
 		}
 	}
 
@@ -233,7 +263,6 @@ func (p *Parser) block() *BlockStatement {
 		return nil
 	}
 
-	blockStmt.Statements = statements
 	return blockStmt
 }
 
@@ -356,25 +385,49 @@ func (p *Parser) primary() Expression {
 		}
 	}
 	if p.match(FUNCTION) {
-		fun := &FunctionLiteral{Token: p.previous()}
-
-		if p.check(IDENTIFIER) {
-			p.advance()
-			fun.Name = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
-		}
-
-		if !p.expectPeek(LEFT_PAREN) {
-			return nil
-		}
-
-		fun.Params = p.parseFunctionParams()
-		fun.Body = p.block()
-
-		return fun
+		return p.parseFunctionLiteral()
 	}
 
 	p.addError(&Error{Message: "Expect expression.", Line: p.previous().Line})
 	return nil
+}
+
+func (p *Parser) parseMethodDeclaration() *MethodDeclaration {
+	method := &MethodDeclaration{}
+
+	if !p.expectPeek(IDENTIFIER) {
+		return nil
+	}
+
+	method.Token = p.previous()
+	method.Name = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+
+	if !p.expectPeek(LEFT_PAREN) {
+		return nil
+	}
+
+	method.Params = p.parseFunctionParams()
+	method.Body = p.block()
+
+	return method
+}
+
+func (p *Parser) parseFunctionLiteral() *FunctionLiteral {
+	fun := &FunctionLiteral{}
+	fun.Token = p.previous()
+
+	if p.check(IDENTIFIER) {
+		fun.Name = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+	}
+
+	if !p.expectPeek(LEFT_PAREN) {
+		return nil
+	}
+
+	fun.Params = p.parseFunctionParams()
+	fun.Body = p.block()
+
+	return fun
 }
 
 func (p *Parser) parseExpressionList(end TokenType) []Expression {
@@ -440,11 +493,19 @@ func (p *Parser) parseFunctionParams() []*Identifier {
 func (p *Parser) call() Expression {
 	expr := p.primary()
 
-	for p.match(LEFT_PAREN) {
-		operator := p.previous()
-		exp := &CallExpression{Token: operator, Callee: expr}
-		exp.Arguments = p.parseExpressionList(RIGHT_PAREN)
-		return exp
+	for {
+		if p.match(LEFT_PAREN) {
+			operator := p.previous()
+			exp := &CallExpression{Token: operator, Callee: expr}
+			exp.Arguments = p.parseExpressionList(RIGHT_PAREN)
+			return exp
+		} else if p.match(DOT) {
+			operator := p.previous()
+			exp := &GetExpression{Token: operator, Object: expr, Property: p.expression()}
+			return exp
+		} else {
+			break
+		}
 	}
 
 	return expr

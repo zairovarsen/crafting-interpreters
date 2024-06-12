@@ -22,6 +22,8 @@ const (
 	notFunctionError        = "not a function"
 	invalidSyntax           = "invalid syntax"
 	notInitialzied          = "variable is not initialized"
+	notClassError           = "not a class error"
+	redeclare               = "variable redeclaration"
 )
 
 var (
@@ -60,6 +62,9 @@ type Visitor interface {
 	VisitCallExpression(node *CallExpression, env *Environment) Object
 	VisitFunctionLiteral(node *FunctionLiteral, env *Environment) Object
 	VisitFunctionDeclaration(node *FunctionDeclaration, env *Environment) Object
+	VisitMethodDeclaration(node *MethodDeclaration, env *Environment) Object
+	VisitClassStatement(node *ClassStatement, env *Environment) Object
+	VisitGetExpression(node *GetExpression, env *Environment) Object
 }
 
 type Interpreter struct {
@@ -145,13 +150,53 @@ func (i *Interpreter) newError(format string, args ...interface{}) Object {
 	return &ErrorObject{msg}
 }
 
+func (i *Interpreter) VisitGetExpression(node *GetExpression, env *Environment) Object {
+	object := node.Object.Accept(i, env)
+	if object.Type() != InstanceObj {
+		return i.newError("%s: %s", invalidSyntax, "cannot access property on non class instance")
+	}
+
+	instance := object.(*InstanceObject)
+	propertyName := node.Property.Value
+
+	if value, ok := instance.GetField(propertyName); ok {
+		return value
+	}
+
+	if method, ok := instance.GetMethod(propertyName); ok {
+		return method
+	}
+
+	return i.newError("%s: %s", invalidSyntax, fmt.Sprintf("Undefined property '%s' on instance of class '%s'", propertyName, instance.Class.Name))
+}
+
+func (i *Interpreter) VisitClassStatement(node *ClassStatement, env *Environment) Object {
+	class := &ClassObject{Name: node.Name}
+	if node.Name == nil {
+		return i.newError("%s: %s", invalidSyntax, "missing class name in declaration")
+	}
+	for _, m := range node.Methods {
+		method := &Function{Name: m.Name, Parameters: m.Params, Body: m.Body, Env: env}
+		if _, ok := class.Methods[m.Name.Value]; ok {
+			return i.newError("%s: %s", invalidSyntax, "duplicate method names")
+		}
+		class.Methods[m.Name.Value] = method
+	}
+	env.Set(node.Name.Value, class)
+	return class
+}
+
 func (i *Interpreter) VisitFunctionDeclaration(node *FunctionDeclaration, env *Environment) Object {
-	function := &Function{Parameters: node.Params, Body: node.Body, Env: env}
+	function := &Function{Name: node.Name, Parameters: node.Params, Body: node.Body, Env: env}
 	if node.Name == nil {
 		return i.newError("%s: %s", invalidSyntax, "missing function name in declaration")
 	}
 	env.Set(node.Name.Value, function)
 	return function
+}
+
+func (i *Interpreter) VisitMethodDeclaration(node *MethodDeclaration, env *Environment) Object {
+	return nil
 }
 
 func (i *Interpreter) VisitFunctionLiteral(node *FunctionLiteral, env *Environment) Object {
@@ -194,7 +239,9 @@ func (i *Interpreter) VisitForStatement(node *For, env *Environment) Object {
 			break
 		}
 
+		i.pushContext(LoopContext)
 		body := node.Body.Accept(i, env)
+		i.popContext()
 		if i.isContinue(body) {
 			goto increment
 		}
@@ -225,7 +272,9 @@ func (i *Interpreter) VisitWhileStatement(node *While, env *Environment) Object 
 			break
 		}
 
+		i.pushContext(LoopContext)
 		body := node.Body.Accept(i, env)
+		i.popContext()
 		if i.isContinue(body) {
 			continue
 		}
@@ -289,6 +338,10 @@ func (i *Interpreter) VisitIfStatement(node *IfStatement, env *Environment) Obje
 
 func (i *Interpreter) VisitVarStatement(node *VarStatement, env *Environment) Object {
 	right := node.Expression.Accept(i, env)
+
+	if _, ok := env.GetCurrentScope(node.Identifier.Value); ok {
+		return i.newError("%s: %s", redeclare, node.Identifier.Value)
+	}
 
 	if !i.isError(right) {
 		// define a variable
@@ -441,6 +494,10 @@ func (i *Interpreter) VisitCallExpression(node *CallExpression, env *Environment
 		arguments = append(arguments, result)
 	}
 
+	if callee.Type() == ClassObj {
+		return i.instantiateClass(callee, arguments)
+	}
+
 	return i.applyFunction(callee, arguments)
 }
 
@@ -448,18 +505,48 @@ func (i *Interpreter) unwrapReturnValue(obj Object) Object {
 	if returnValue, ok := obj.(*ReturnValueObject); ok {
 		return returnValue.Value
 	}
-
+	// implicit return
 	return obj
 }
 
+func (i *Interpreter) instantiateClass(class Object, args []Object) Object {
+	cl, ok := class.(*ClassObject)
+	if !ok {
+		return i.newError("%s: %s", notClassError, class.Type())
+	}
+	instance := &InstanceObject{
+		Class:  cl,
+		Fields: make(map[string]Object),
+	}
+
+	if initMethod, ok := cl.Methods["init"]; ok {
+		if len(initMethod.Parameters) != len(args) {
+			return i.newError("constructor for class %s expected %d arguments, got %d", cl.Name.Value, len(initMethod.Parameters), len(args))
+		}
+
+		newEnv := NewEnclosingEnvironment(initMethod.Env)
+		for idx, param := range initMethod.Parameters {
+			newEnv.Set(param.Value, args[idx])
+		}
+
+		i.executeBlock(initMethod.Body.Statements, newEnv)
+	}
+
+	return instance
+}
+
 func (i *Interpreter) applyFunction(fn Object, args []Object) Object {
+
 	switch fn := fn.(type) {
 	case *Function:
+
 		if len(fn.Parameters) != len(args) {
 			return i.newError("%s: Expected %d arguments, but got %d .", invalidSyntax, len(fn.Parameters), len(args))
 		}
 		extendedEnv := i.extendedFunctionEnv(fn, args)
+		i.pushContext(FunctionContext)
 		evaluated := fn.Body.Accept(i, extendedEnv)
+		i.popContext()
 		return i.unwrapReturnValue(evaluated)
 	case *Builtin:
 		if result := fn.Fn(args...); result != nil {
@@ -483,10 +570,24 @@ func (i *Interpreter) extendedFunctionEnv(fn *Function, args []Object) *Environm
 }
 
 func (i *Interpreter) VisitTernaryExpression(node *TernaryExpression, env *Environment) Object {
-	return nil
+	condition := node.Condition.Accept(i, env)
+	if i.isError(condition) {
+		return condition
+	}
+
+	if i.isTruthy(condition) {
+		return node.ThenBranch.Accept(i, env)
+	} else if node.ElseBranch != nil {
+		return node.ElseBranch.Accept(i, env)
+	} else {
+		return Null
+	}
 }
 
 func (i *Interpreter) VisitReturnStatement(node *ReturnStatement, env *Environment) Object {
+	if i.currentContext().Type != FunctionContext {
+		return i.newError("%s: %s", invalidSyntax, "Return statement not within function")
+	}
 	value := node.ReturnValue.Accept(i, env)
 	return &ReturnValueObject{Value: value}
 }

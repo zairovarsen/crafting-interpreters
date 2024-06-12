@@ -38,6 +38,11 @@ func (e *Environment) Set(name string, value Object) Object {
 	return value
 }
 
+func (e *Environment) GetCurrentScope(name string) (Object, bool) {
+	obj, ok := e.store[name]
+	return obj, ok
+}
+
 func (e *Environment) Get(name string) (Object, bool) {
 	obj, ok := e.store[name]
 	if !ok && e.enclosing != nil {

@@ -80,64 +80,91 @@ func (is *IfStatement) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitIfStatement(is, env)
 }
 
-type FunctionDeclaration struct {
+type ClassStatement struct {
+	Token   Token // class
+	Name    *Identifier
+	Methods []*MethodDeclaration
+}
+
+func (cs *ClassStatement) statementNode() {}
+func (cs *ClassStatement) TokenLiteral() string {
+	return cs.Token.Lexeme
+}
+func (cs *ClassStatement) String() string {
+	var str strings.Builder
+
+	var methods []string
+	for _, m := range cs.Methods {
+		methods = append(methods, m.String())
+	}
+
+	str.WriteString(cs.TokenLiteral())
+	str.WriteString(cs.Name.String())
+	str.WriteString(strings.Join(methods, "\n"))
+
+	return str.String()
+}
+func (cs *ClassStatement) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitClassStatement(cs, env)
+}
+
+type FunctionCommon struct {
 	Token  Token // ( token
 	Name   *Identifier
 	Params []*Identifier
 	Body   *BlockStatement
 }
 
-func (fl *FunctionDeclaration) statementNode()       {}
-func (fl *FunctionDeclaration) TokenLiteral() string { return fl.Token.Lexeme }
-func (fl *FunctionDeclaration) String() string {
+func (fc *FunctionCommon) TokenLiteral() string {
+	return fc.Token.Lexeme
+}
+
+func (fc *FunctionCommon) String() string {
 	var str strings.Builder
 
 	var params []string
-	for _, p := range fl.Params {
+	for _, p := range fc.Params {
 		params = append(params, p.String())
 	}
 
-	str.WriteString(fl.TokenLiteral())
-	str.WriteString(fl.Name.String())
+	str.WriteString(fc.TokenLiteral())
+	if fc.Name != nil {
+		str.WriteString(fc.Name.String())
+	}
 	str.WriteString(LEFT_PAREN)
 	str.WriteString(strings.Join(params, COMMA+" "))
 	str.WriteString(RIGHT_PAREN)
-	str.WriteString(fl.Body.String())
+	str.WriteString(fc.Body.String())
 
 	return str.String()
 }
+
+type FunctionDeclaration struct {
+	FunctionCommon
+}
+
+func (fl *FunctionDeclaration) statementNode() {}
 func (fl *FunctionDeclaration) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitFunctionDeclaration(fl, env)
 }
 
 type FunctionLiteral struct {
-	Token  Token // ( token
-	Name   *Identifier
-	Params []*Identifier
-	Body   *BlockStatement
+	FunctionCommon
 }
 
-func (fl *FunctionLiteral) expressionNode()      {}
-func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Lexeme }
-func (fl *FunctionLiteral) String() string {
-	var str strings.Builder
-
-	var params []string
-	for _, p := range fl.Params {
-		params = append(params, p.String())
-	}
-
-	str.WriteString(fl.TokenLiteral())
-	str.WriteString(fl.Name.String())
-	str.WriteString(LEFT_PAREN)
-	str.WriteString(strings.Join(params, COMMA+" "))
-	str.WriteString(RIGHT_PAREN)
-	str.WriteString(fl.Body.String())
-
-	return str.String()
-}
+func (fl *FunctionLiteral) expressionNode() {}
 func (fl *FunctionLiteral) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitFunctionLiteral(fl, env)
+}
+
+type MethodDeclaration struct {
+	FunctionCommon
+	// Receiver *Identifier //
+}
+
+func (md *MethodDeclaration) statementNode() {}
+func (md *MethodDeclaration) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitMethodDeclaration(md, env)
 }
 
 type ExpressionStatement struct {
@@ -264,6 +291,26 @@ func (r *ReturnStatement) String() string {
 }
 func (r *ReturnStatement) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitReturnStatement(r, env)
+}
+
+type GetExpression struct {
+	Token    Token
+	Object   Expression
+	Property *Identifier
+}
+
+func (ge *GetExpression) expressionNode()      {}
+func (ge *GetExpression) TokenLiteral() string { return ge.Token.Lexeme }
+func (ge *GetExpression) String() string {
+	var str strings.Builder
+
+	str.WriteString(ge.Object.String())
+	str.WriteString(ge.Property.String())
+
+	return str.String()
+}
+func (ge *GetExpression) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitGetExpression(ge, env)
 }
 
 type CallExpression struct {

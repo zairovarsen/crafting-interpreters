@@ -10,7 +10,7 @@ term           -> factor ( ( "-" | "+" ) factor )* ;
 factor         -> unary ( ( "/" | "*" ) unary )* ;
 unary          -> ( "!" | "-" ) unary | call
 
-call -> primary ( "(" arguments? ")" )* ;
+call -> primary ( "(" arguments? ")" | "." IDENTIFER) * ;
 arguments -> expression( "," expression )* ;
 
 funDecl -> "function" func; 
@@ -22,8 +22,9 @@ comma          -> ternary ( "," ternary )* ;
 
 program -> declaration* EOF ;
 
-declaration -> varDecl | statement ;
+declaration -> varDecl | statement | funDecl | classDecl;
 
+classDecl -> "class" IDENTIFER "{" function* "}" ;
 varDecl -> "var" IDENTIFIER ( "=" expression )? ";" ;
 statement -> exprStmt | printStmt | block | ifStmt | whileStmt | forStmt | returnStmt;
 
@@ -39,3 +40,6 @@ ifStmt -> "if" "(" expression ")" statement
 block -> "{" declaration* "}" ;
 exprStmt -> expression ";" ;
 printStmt -> "print" expression ";" ;
+
+function -> IDENTIFIER "(" parameters? ")" block;
+parameters -> IDENTIFIER ( "," IDENTIFIER )* ; 
