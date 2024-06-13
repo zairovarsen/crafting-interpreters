@@ -24,6 +24,7 @@ const (
 	ClosureObj          = "Closure"
 	ClassObj            = "Class"
 	InstanceObj         = "Instance"
+	BoundObj            = "BoundObj"
 )
 
 type BuiltinFunction func(args ...Object) Object
@@ -142,6 +143,16 @@ func (io *InstanceObject) SetField(name string, value Object) {
 func (io *InstanceObject) GetMethod(name string) (*Function, bool) {
 	method, ok := io.Class.Methods[name]
 	return method, ok
+}
+
+type BoundMethod struct {
+	Receiver *InstanceObject
+	Method   *Function
+}
+
+func (bm *BoundMethod) Type() ObjectType { return BoundObj }
+func (bm *BoundMethod) Inspect() string {
+	return fmt.Sprintf("<bound method %s of %s>", bm.Method.Name.Value, bm.Receiver.Class.Name)
 }
 
 type Function struct {

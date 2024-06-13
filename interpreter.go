@@ -8,6 +8,8 @@ const (
 	FunctionContext ContextType = iota
 	MainContext
 	LoopContext
+	ClassMethodContext
+	InitializerContext
 )
 
 type Context struct {
@@ -23,6 +25,7 @@ const (
 	invalidSyntax           = "invalid syntax"
 	notInitialzied          = "variable is not initialized"
 	notClassError           = "not a class error"
+	notInstanceError        = "not an instance of a class"
 	redeclare               = "variable redeclaration"
 )
 
@@ -65,6 +68,8 @@ type Visitor interface {
 	VisitMethodDeclaration(node *MethodDeclaration, env *Environment) Object
 	VisitClassStatement(node *ClassStatement, env *Environment) Object
 	VisitGetExpression(node *GetExpression, env *Environment) Object
+	VisitSetExpression(node *SetExpression, env *Environment) Object
+	VisitThisExpression(node *This, env *Environment) Object
 }
 
 type Interpreter struct {
@@ -150,10 +155,35 @@ func (i *Interpreter) newError(format string, args ...interface{}) Object {
 	return &ErrorObject{msg}
 }
 
+func (i *Interpreter) VisitThisExpression(node *This, env *Environment) Object {
+	if i.currentContext().Type != ClassMethodContext {
+		return i.newError("%s: %s", invalidSyntax, "This not within class method")
+	}
+	if obj, ok := env.Get(node.Token.Lexeme); ok {
+		return obj
+	}
+
+	return nil
+}
+
+func (i *Interpreter) VisitSetExpression(node *SetExpression, env *Environment) Object {
+	object := node.Object.Accept(i, env)
+
+	if object.Type() != InstanceObj {
+		return i.newError("%s: %s", invalidSyntax, "Only instances have fields.")
+	}
+
+	instance := object.(*InstanceObject)
+	value := node.Value.Accept(i, env)
+	instance.SetField(node.Property.Value, value)
+
+	return value
+}
+
 func (i *Interpreter) VisitGetExpression(node *GetExpression, env *Environment) Object {
 	object := node.Object.Accept(i, env)
 	if object.Type() != InstanceObj {
-		return i.newError("%s: %s", invalidSyntax, "cannot access property on non class instance")
+		return i.newError("%s: %s", invalidSyntax, "Only instance have properties")
 	}
 
 	instance := object.(*InstanceObject)
@@ -164,17 +194,18 @@ func (i *Interpreter) VisitGetExpression(node *GetExpression, env *Environment) 
 	}
 
 	if method, ok := instance.GetMethod(propertyName); ok {
-		return method
+		return &BoundMethod{Method: method, Receiver: instance}
 	}
 
 	return i.newError("%s: %s", invalidSyntax, fmt.Sprintf("Undefined property '%s' on instance of class '%s'", propertyName, instance.Class.Name))
 }
 
 func (i *Interpreter) VisitClassStatement(node *ClassStatement, env *Environment) Object {
-	class := &ClassObject{Name: node.Name}
+	class := &ClassObject{Name: node.Name, Methods: make(map[string]*Function)}
 	if node.Name == nil {
 		return i.newError("%s: %s", invalidSyntax, "missing class name in declaration")
 	}
+	i.pushContext(ClassMethodContext)
 	for _, m := range node.Methods {
 		method := &Function{Name: m.Name, Parameters: m.Params, Body: m.Body, Env: env}
 		if _, ok := class.Methods[m.Name.Value]; ok {
@@ -182,6 +213,7 @@ func (i *Interpreter) VisitClassStatement(node *ClassStatement, env *Environment
 		}
 		class.Methods[m.Name.Value] = method
 	}
+	i.popContext()
 	env.Set(node.Name.Value, class)
 	return class
 }
@@ -494,11 +526,14 @@ func (i *Interpreter) VisitCallExpression(node *CallExpression, env *Environment
 		arguments = append(arguments, result)
 	}
 
-	if callee.Type() == ClassObj {
+	switch callee.Type() {
+	case ClassObj:
 		return i.instantiateClass(callee, arguments)
+	case BoundObj:
+		return i.applyBoundMethod(callee, arguments)
+	default:
+		return i.applyFunction(callee, arguments)
 	}
-
-	return i.applyFunction(callee, arguments)
 }
 
 func (i *Interpreter) unwrapReturnValue(obj Object) Object {
@@ -507,6 +542,50 @@ func (i *Interpreter) unwrapReturnValue(obj Object) Object {
 	}
 	// implicit return
 	return obj
+}
+
+func (i *Interpreter) applyBoundMethod(class Object, args []Object) Object {
+	bm, ok := class.(*BoundMethod)
+	if !ok {
+		return i.newError("%s: %s", invalidSyntax, class.Type())
+	}
+
+	// Check if the method is the initializer
+	if bm.Method.Name.Value == "init" {
+		i.pushContext(InitializerContext)
+		defer i.popContext()
+
+		extendedEnv := NewEnclosingEnvironment(bm.Method.Env)
+		extendedEnv.Set("this", bm.Receiver)
+
+		// Set parameters for the initializer
+		for idx, param := range bm.Method.Parameters {
+			extendedEnv.Set(param.Value, args[idx])
+		}
+
+		// Execute the initializer
+		i.executeBlock(bm.Method.Body.Statements, extendedEnv)
+		return bm.Receiver
+	}
+
+	extendedEnv := NewEnclosingEnvironment(bm.Method.Env)
+	extendedEnv.Set("this", bm.Receiver)
+
+	i.pushContext(ClassMethodContext)
+	defer func() { i.popContext() }()
+
+	for idx, param := range bm.Method.Parameters {
+		extendedEnv.Set(param.Value, args[idx])
+	}
+
+	result := i.executeBlock(bm.Method.Body.Statements, extendedEnv)
+
+	// For chaining, return the instance if the method returns null or itself
+	if result == nil || result.Type() == NillObj {
+		return bm.Receiver
+	}
+
+	return result
 }
 
 func (i *Interpreter) instantiateClass(class Object, args []Object) Object {
@@ -520,16 +599,22 @@ func (i *Interpreter) instantiateClass(class Object, args []Object) Object {
 	}
 
 	if initMethod, ok := cl.Methods["init"]; ok {
+		i.pushContext(InitializerContext)
+		defer i.popContext()
 		if len(initMethod.Parameters) != len(args) {
 			return i.newError("constructor for class %s expected %d arguments, got %d", cl.Name.Value, len(initMethod.Parameters), len(args))
 		}
 
 		newEnv := NewEnclosingEnvironment(initMethod.Env)
+		newEnv.Set("this", instance)
 		for idx, param := range initMethod.Parameters {
 			newEnv.Set(param.Value, args[idx])
 		}
 
-		i.executeBlock(initMethod.Body.Statements, newEnv)
+		result := i.executeBlock(initMethod.Body.Statements, newEnv)
+		if i.isError(result) {
+			return result
+		}
 	}
 
 	return instance
@@ -539,14 +624,14 @@ func (i *Interpreter) applyFunction(fn Object, args []Object) Object {
 
 	switch fn := fn.(type) {
 	case *Function:
-
 		if len(fn.Parameters) != len(args) {
 			return i.newError("%s: Expected %d arguments, but got %d .", invalidSyntax, len(fn.Parameters), len(args))
 		}
 		extendedEnv := i.extendedFunctionEnv(fn, args)
 		i.pushContext(FunctionContext)
+		defer func() { i.popContext() }()
 		evaluated := fn.Body.Accept(i, extendedEnv)
-		i.popContext()
+
 		return i.unwrapReturnValue(evaluated)
 	case *Builtin:
 		if result := fn.Fn(args...); result != nil {
@@ -585,10 +670,21 @@ func (i *Interpreter) VisitTernaryExpression(node *TernaryExpression, env *Envir
 }
 
 func (i *Interpreter) VisitReturnStatement(node *ReturnStatement, env *Environment) Object {
-	if i.currentContext().Type != FunctionContext {
-		return i.newError("%s: %s", invalidSyntax, "Return statement not within function")
+	var value Object
+
+	if i.currentContext().Type != FunctionContext && i.currentContext().Type != InitializerContext {
+		return i.newError("%s: %s", invalidSyntax, "Cannot use 'return' outside of function")
 	}
-	value := node.ReturnValue.Accept(i, env)
+
+	if node.ReturnValue == nil {
+		value = Null
+	} else {
+		value = node.ReturnValue.Accept(i, env)
+		if i.currentContext().Type == InitializerContext {
+			return i.newError("%s: %s", invalidSyntax, "Cannot use 'return' inside init method")
+		}
+	}
+
 	return &ReturnValueObject{Value: value}
 }
 

@@ -387,6 +387,9 @@ func (p *Parser) primary() Expression {
 	if p.match(FUNCTION) {
 		return p.parseFunctionLiteral()
 	}
+	if p.match(THIS) {
+		return &This{Token: p.previous()}
+	}
 
 	p.addError(&Error{Message: "Expect expression.", Line: p.previous().Line})
 	return nil
@@ -498,11 +501,15 @@ func (p *Parser) call() Expression {
 			operator := p.previous()
 			exp := &CallExpression{Token: operator, Callee: expr}
 			exp.Arguments = p.parseExpressionList(RIGHT_PAREN)
-			return exp
+			expr = exp
 		} else if p.match(DOT) {
 			operator := p.previous()
-			exp := &GetExpression{Token: operator, Object: expr, Property: p.expression()}
-			return exp
+			if !p.expectPeek(IDENTIFIER) {
+				return nil
+			}
+			identifier := &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+			exp := &GetExpression{Token: operator, Object: expr, Property: identifier}
+			expr = exp
 		} else {
 			break
 		}
@@ -658,16 +665,24 @@ func (p *Parser) assignment() Expression {
 		// chaining assignemnts x = y = z = 10
 		right := p.assignment()
 
-		if identifier, ok := expr.(*Identifier); ok {
+		switch target := expr.(type) {
+		case *Identifier:
 			return &Assignment{
 				Token:      equals,
-				Identifier: *identifier,
+				Identifier: *target,
 				Expression: right,
 			}
+		case *GetExpression:
+			return &SetExpression{
+				Token:    equals,
+				Object:   target.Object,
+				Property: target.Property,
+				Value:    right,
+			}
+		default:
+			p.addError(&Error{Message: "Invalid assignment target.", Line: p.previous().Line})
+			return nil
 		}
-
-		p.addError(&Error{Message: "Invalid assignment target.", Line: p.previous().Line})
-		return nil
 	}
 
 	return expr

@@ -250,6 +250,25 @@ func (c *ContinueStatement) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitContinueStatement(c, env)
 }
 
+type This struct {
+	Token Token
+}
+
+func (t *This) expressionNode() {}
+func (t *This) TokenLiteral() string {
+	return t.Token.Lexeme
+}
+func (t *This) String() string {
+	var str strings.Builder
+
+	str.WriteString(t.TokenLiteral())
+
+	return str.String()
+}
+func (t *This) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitThisExpression(t, env)
+}
+
 type BreakStatement struct {
 	Token Token
 }
@@ -293,6 +312,29 @@ func (r *ReturnStatement) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitReturnStatement(r, env)
 }
 
+type SetExpression struct {
+	Token    Token
+	Object   Expression
+	Property *Identifier
+	Value    Expression
+}
+
+func (se *SetExpression) expressionNode()      {}
+func (se *SetExpression) TokenLiteral() string { return se.Token.Lexeme }
+func (se *SetExpression) String() string {
+	var str strings.Builder
+
+	str.WriteString(se.Object.String())
+	str.WriteString(se.Property.String())
+	str.WriteString("=")
+	str.WriteString(se.Value.String())
+
+	return str.String()
+}
+func (ce *SetExpression) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitSetExpression(ce, env)
+}
+
 type GetExpression struct {
 	Token    Token
 	Object   Expression
@@ -305,6 +347,7 @@ func (ge *GetExpression) String() string {
 	var str strings.Builder
 
 	str.WriteString(ge.Object.String())
+	str.WriteString(".")
 	str.WriteString(ge.Property.String())
 
 	return str.String()

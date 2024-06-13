@@ -28,6 +28,100 @@ func runInterpreter(input []byte) Object {
 	return interpreter.Interpret(program, env)
 }
 
+func TestThis(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected string
+	}{
+		{
+			`class Cake {
+				taste() {
+					var adjective = "delicious";
+					print("The " + this.flavor + " cake is " + adjective + "!");
+				}
+			}
+			
+			var cake = Cake();
+			cake.flavor = "German";
+			cake.taste();
+			`,
+			"The German cake is delicious!\n",
+		},
+	}
+
+	for _, test := range tests {
+
+		// Save the current stdout
+		originalStdout := os.Stdout
+
+		// Create a pipe to capture stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
+		// Run the interpreter
+		runInterpreter([]byte(test.code))
+
+		// Close the writer and restore stdout
+		w.Close()
+		os.Stdout = originalStdout
+
+		// Read the output
+		var buf bytes.Buffer
+		io.Copy(&buf, r)
+
+		if buf.String() != test.expected {
+			t.Errorf("Expected=%s, got=%s", test.expected, buf.String())
+		}
+	}
+}
+
+func TestSetProperty(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected float64
+	}{
+		{
+			`class Hello {}
+			 var h = Hello();
+			 h.something = 20;
+			`,
+			20,
+		},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if !testLiteralObject(t, result, test.expected) {
+			return
+		}
+	}
+}
+
+func TestGetProperty(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected float64
+	}{
+		{
+			`class Hello {}
+			 var h = Hello();
+			 h.something = 20;
+			 h.something;
+			`,
+			20,
+		},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if !testLiteralObject(t, result, test.expected) {
+			return
+		}
+	}
+}
+
 func TestRecursion(t *testing.T) {
 	tests := []struct {
 		code     string
@@ -457,7 +551,7 @@ func testFloatObject(t *testing.T, obj Object, expected float64) bool {
 
 func testStringObject(t *testing.T, obj Object, expected string) bool {
 	if obj.Type() != StringObj {
-		t.Errorf("object is not %T, got=%T", StringObj, obj.Type())
+		t.Errorf("object is not %s, got=%s", StringObj, obj.Type())
 		return false
 	}
 

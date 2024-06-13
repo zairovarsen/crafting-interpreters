@@ -16,6 +16,95 @@ func createParseProgram(input string) *Program {
 	return program
 }
 
+func TestSetExpression(t *testing.T) {
+	input := `breakfast.omelette.filling.meat = ham;`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	expr, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+	}
+
+	set, ok := expr.Expression.(*SetExpression)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &Assignment{}, expr.Expression)
+	}
+
+	if !testLiteral(t, set.Value, "ham") {
+		return
+	}
+
+	getExpr, ok := set.Object.(*GetExpression)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &GetExpression{}, expr.Expression)
+	}
+
+	if !testLiteral(t, set.Property, "meat") {
+		return
+	}
+
+	if !testLiteral(t, getExpr.Property, "filling") {
+		return
+	}
+
+	getExpr, ok = getExpr.Object.(*GetExpression)
+	if !testLiteral(t, getExpr.Property, "omelette") {
+		return
+	}
+
+	if !testLiteral(t, getExpr.Object, "breakfast") {
+		return
+	}
+}
+
+func TestGetExpression(t *testing.T) {
+	input := `breakfast.omelette.filling.meat;`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	expr, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+	}
+
+	getExpr, ok := expr.Expression.(*GetExpression)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &GetExpression{}, expr.Expression)
+	}
+
+	if !testLiteral(t, getExpr.Property, "meat") {
+		return
+	}
+
+	getExpr, ok = getExpr.Object.(*GetExpression)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &GetExpression{}, expr.Expression)
+	}
+	if !testLiteral(t, getExpr.Property, "filling") {
+		return
+	}
+
+	getExpr, ok = getExpr.Object.(*GetExpression)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &GetExpression{}, expr.Expression)
+	}
+	if !testLiteral(t, getExpr.Property, "omelette") {
+		return
+	}
+	if !testLiteral(t, getExpr.Object, "breakfast") {
+		return
+	}
+}
+
 func TestClassStatement(t *testing.T) {
 	input := `class Breakfast {
 		cook() {
