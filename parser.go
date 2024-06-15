@@ -121,6 +121,19 @@ func (p *Parser) classDeclaration() *ClassStatement {
 
 	class.Name = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
 
+	if p.check(EXTEND) {
+		p.advance()
+		if !p.expectPeek(IDENTIFIER) {
+			return nil
+		}
+		if class.Name.Value == p.previous().Lexeme {
+			err := &Error{Message: fmt.Sprintf("Class %s cannot inherit from itself", class.Name.Value), Line: p.peek().Line}
+			p.addError(err)
+			return nil
+		}
+		class.SuperClass = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+	}
+
 	if !p.expectPeek(LEFT_BRACKET) {
 		return nil
 	}
@@ -389,6 +402,17 @@ func (p *Parser) primary() Expression {
 	}
 	if p.match(THIS) {
 		return &This{Token: p.previous()}
+	}
+	if p.match(SUPER) {
+		super := &Super{Token: p.previous()}
+		if !p.expectPeek(DOT) {
+			return nil
+		}
+		if !p.expectPeek(IDENTIFIER) {
+			return nil
+		}
+		super.Method = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
+		return super
 	}
 
 	p.addError(&Error{Message: "Expect expression.", Line: p.previous().Line})

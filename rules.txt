@@ -16,7 +16,7 @@ arguments -> expression( "," expression )* ;
 funDecl -> "function" func; 
 func -> IDENTIFIER "(" parameters? ")" block;
 
-primary        -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | ternary ;
+primary        -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | ternary | "super" "." IDENTIFIER ;
 ternary        -> equality "?" expression ":" ternary ;
 comma          -> ternary ( "," ternary )* ;
 
@@ -24,7 +24,7 @@ program -> declaration* EOF ;
 
 declaration -> varDecl | statement | funDecl | classDecl;
 
-classDecl -> "class" IDENTIFER "{" function* "}" ;
+classDecl -> "class" IDENTIFER ( "extends" IDENTIFIER)? "{" function* "}" ;
 varDecl -> "var" IDENTIFIER ( "=" expression )? ";" ;
 statement -> exprStmt | printStmt | block | ifStmt | whileStmt | forStmt | returnStmt;
 

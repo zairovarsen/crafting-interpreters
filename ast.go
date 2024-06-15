@@ -81,9 +81,10 @@ func (is *IfStatement) Accept(visitor Visitor, env *Environment) Object {
 }
 
 type ClassStatement struct {
-	Token   Token // class
-	Name    *Identifier
-	Methods []*MethodDeclaration
+	Token      Token // class
+	Name       *Identifier
+	SuperClass *Identifier
+	Methods    []*MethodDeclaration
 }
 
 func (cs *ClassStatement) statementNode() {}
@@ -99,13 +100,40 @@ func (cs *ClassStatement) String() string {
 	}
 
 	str.WriteString(cs.TokenLiteral())
+	str.WriteString(" ")
 	str.WriteString(cs.Name.String())
+	if cs.SuperClass != nil {
+		str.WriteString(" extends ")
+		str.WriteString(cs.SuperClass.String())
+	}
 	str.WriteString(strings.Join(methods, "\n"))
 
 	return str.String()
 }
 func (cs *ClassStatement) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitClassStatement(cs, env)
+}
+
+type Super struct {
+	Token  Token
+	Method *Identifier
+}
+
+func (ss *Super) expressionNode() {}
+func (ss *Super) TokenLiteral() string {
+	return ss.Token.Lexeme
+}
+func (ss *Super) String() string {
+	var str strings.Builder
+
+	str.WriteString(ss.Token.Lexeme)
+	str.WriteString(".")
+	str.WriteString(ss.Method.String())
+
+	return str.String()
+}
+func (ss *Super) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitSuper(ss, env)
 }
 
 type FunctionCommon struct {

@@ -105,6 +105,74 @@ func TestGetExpression(t *testing.T) {
 	}
 }
 
+func TestSuperClause(t *testing.T) {
+	input := `class Breakfast extends Food {
+		cook() {
+			super.cook();
+			print("Eggs");
+		}
+	}`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	class, ok := program.Statements[0].(*ClassStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ClassStatement{}, program.Statements[0])
+	}
+
+	if len(class.Methods) != 1 {
+		t.Errorf("Expected %d method, got=%d", 1, len(class.Methods))
+	}
+
+	expr, ok := class.Methods[0].Body.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &ExpressionStatement{}, class.Methods[0].Body.Statements[0])
+	}
+
+	call, ok := expr.Expression.(*CallExpression)
+	if !ok {
+		t.Errorf("Expected %T, got=%T", &Super{}, expr.Expression)
+	}
+
+	super, ok := call.Callee.(*Super)
+
+	if !testLiteral(t, super.Method, "cook") {
+		return
+	}
+}
+
+func TestExtendsClause(t *testing.T) {
+	input := `class Breakfast extends Food {
+		cook() {
+			print("Eggs");
+		}
+}
+	`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	class, ok := program.Statements[0].(*ClassStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ClassStatement{}, program.Statements[0])
+	}
+
+	if class.SuperClass == nil {
+		t.Fatalf("Expected superclass to be defined")
+	}
+
+	if !testLiteral(t, class.SuperClass, "Food") {
+		return
+	}
+}
+
 func TestClassStatement(t *testing.T) {
 	input := `class Breakfast {
 		cook() {

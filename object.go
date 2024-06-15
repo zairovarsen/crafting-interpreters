@@ -94,6 +94,7 @@ func (r *ReturnValueObject) Inspect() string  { return r.Value.Inspect() }
 
 type ClassObject struct {
 	Name          *Identifier
+	SuperClass    *ClassObject
 	Methods       map[string]*Function
 	StaticMethods map[string]*Function
 }
@@ -114,11 +115,48 @@ func (c *ClassObject) Inspect() string {
 	if c.Name != nil {
 		str.WriteString(" " + c.Name.Value)
 	}
+	if c.SuperClass != nil {
+		str.WriteString(" extends " + c.SuperClass.Name.Value)
+	}
 	str.WriteString(" {\n")
 	str.WriteString(strings.Join(methods, "\n"))
 	str.WriteString("\n}")
 
 	return str.String()
+}
+
+func (c *ClassObject) GetSuperMethod(name string) (*Function, bool) {
+	if c.SuperClass != nil {
+		super := c.SuperClass
+		for super != nil {
+			method, ok := super.Methods[name]
+			if ok {
+				return method, ok
+			}
+			super = super.SuperClass
+		}
+	}
+	return nil, false
+}
+
+func (c *ClassObject) GetMethod(name string) (*Function, bool) {
+	method, ok := c.Methods[name]
+	if !ok && c.SuperClass != nil {
+		super := c.SuperClass
+		for super != nil {
+			method, ok = super.Methods[name]
+			if ok {
+				return method, ok
+			}
+			super = super.SuperClass
+		}
+	}
+	return method, ok
+}
+
+func (c *ClassObject) GetStaticMethod(name string) (*Function, bool) {
+	method, ok := c.StaticMethods[name]
+	return method, ok
 }
 
 type InstanceObject struct {
@@ -145,8 +183,7 @@ func (io *InstanceObject) SetField(name string, value Object) {
 }
 
 func (io *InstanceObject) GetMethod(name string) (*Function, bool) {
-	method, ok := io.Class.Methods[name]
-	return method, ok
+	return io.Class.GetMethod(name)
 }
 
 type BoundMethod struct {

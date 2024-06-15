@@ -28,6 +28,62 @@ func runInterpreter(input []byte) Object {
 	return interpreter.Interpret(program, env)
 }
 
+func TestSuper(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected string
+	}{
+		{
+			`class A {
+				method() {
+					print("Method A");
+				}
+			}
+
+			class B extends A {
+				method() {
+					print("Method B");
+				}
+
+				test() {
+					super.method();
+				}
+			}
+
+			class C extends B {}
+
+			C().test();
+			`,
+			"Method A\n",
+		},
+	}
+
+	for _, test := range tests {
+
+		// Save the current stdout
+		originalStdout := os.Stdout
+
+		// Create a pipe to capture stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
+		// Run the interpreter
+		runInterpreter([]byte(test.code))
+
+		// Close the writer and restore stdout
+		w.Close()
+		os.Stdout = originalStdout
+
+		// Read the output
+		var buf bytes.Buffer
+		io.Copy(&buf, r)
+
+		if buf.String() != test.expected {
+			t.Errorf("Expected=%s, got=%s", test.expected, buf.String())
+		}
+	}
+}
+
 func TestGetter(t *testing.T) {
 	tests := []struct {
 		code     string

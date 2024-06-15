@@ -58,6 +58,7 @@ const (
 	BREAK    = "BREAK"
 	CONTINUE = "CONTINUE"
 	STATIC   = "STATIC"
+	EXTEND   = "EXTEND"
 
 	EOF = "EOF"
 )
@@ -81,6 +82,7 @@ var reserved = map[string]TokenType{
 	"break":    BREAK,
 	"continue": CONTINUE,
 	"static":   STATIC,
+	"extends":  EXTEND,
 }
 
 type Token struct {

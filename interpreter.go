@@ -21,6 +21,7 @@ const (
 	typeMissMatchError      = "type mismatch"
 	divisionByZero          = "divide by zero"
 	identifierNotFoundError = "identifier not found"
+	methodNotFoundError     = "method not found"
 	notFunctionError        = "not a function"
 	invalidSyntax           = "invalid syntax"
 	notInitialzied          = "variable is not initialized"
@@ -70,6 +71,7 @@ type Visitor interface {
 	VisitGetExpression(node *GetExpression, env *Environment) Object
 	VisitSetExpression(node *SetExpression, env *Environment) Object
 	VisitThisExpression(node *This, env *Environment) Object
+	VisitSuper(node *Super, env *Environment) Object
 }
 
 type Interpreter struct {
@@ -155,15 +157,34 @@ func (i *Interpreter) newError(format string, args ...interface{}) Object {
 	return &ErrorObject{msg}
 }
 
+func (i *Interpreter) VisitSuper(node *Super, env *Environment) Object {
+	if i.currentContext().Type != ClassMethodContext && i.currentContext().Type != InitializerContext {
+		return i.newError("%s: %s", invalidSyntax, "[super] cannot be used outside of class method")
+	}
+	if obj, ok := env.Get(node.Token.Lexeme); ok {
+		if obj.Type() != ClassObj {
+			return i.newError("%s: %s", invalidSyntax, "[super] must be a superclass")
+		}
+		class := obj.(*ClassObject)
+		if method, ok := class.GetSuperMethod(node.Method.Value); ok {
+			return method
+		}
+
+		return i.newError("%s: %s", methodNotFoundError, node.Method.Value)
+	}
+
+	return i.newError("%s: %s", invalidSyntax, "Can't use super in a class with no superclass.")
+}
+
 func (i *Interpreter) VisitThisExpression(node *This, env *Environment) Object {
 	if i.currentContext().Type != ClassMethodContext && i.currentContext().Type != InitializerContext {
-		return i.newError("%s: %s", invalidSyntax, "This not within class method")
+		return i.newError("%s: %s", invalidSyntax, "[this] cannot be used outside of class method")
 	}
 	if obj, ok := env.Get(node.Token.Lexeme); ok {
 		return obj
 	}
 
-	return nil
+	return i.newError("%s: %s", identifierNotFoundError, "this")
 }
 
 func (i *Interpreter) VisitSetExpression(node *SetExpression, env *Environment) Object {
@@ -221,9 +242,28 @@ func (i *Interpreter) VisitClassStatement(node *ClassStatement, env *Environment
 	if node.Name == nil {
 		return i.newError("%s: %s", invalidSyntax, "missing class name in declaration")
 	}
+
+	if node.SuperClass != nil {
+		// no hoisting for now
+		if obj, ok := env.Get(node.SuperClass.Value); ok {
+			if obj.Type() != ClassObj {
+				return i.newError("%s: %s", invalidSyntax, "Superclass must be a class.")
+			}
+
+			super := obj.(*ClassObject)
+			class.SuperClass = super
+		} else {
+			return i.newError("%s: %s", invalidSyntax, "Superclass doesn't not exist")
+		}
+	}
+
 	i.pushContext(ClassMethodContext)
 	for _, m := range node.Methods {
-		method := &Function{Name: m.Name, Parameters: m.Params, Body: m.Body, Env: env, IsStatic: m.IsStatic, IsGetter: m.IsGetter}
+		method := m.Accept(i, env)
+		if method.Type() != FunctionObj {
+			return i.newError("%s: %s", invalidSyntax, "Invalid method declaration inside a class")
+		}
+		fun := method.(*Function)
 		if _, ok := class.Methods[m.Name.Value]; ok {
 			return i.newError("%s: %s %s", invalidSyntax, "duplicate method name", m.Name.Value)
 		}
@@ -232,9 +272,9 @@ func (i *Interpreter) VisitClassStatement(node *ClassStatement, env *Environment
 		}
 
 		if m.IsStatic {
-			class.StaticMethods[m.Name.Value] = method
+			class.StaticMethods[m.Name.Value] = fun
 		} else {
-			class.Methods[m.Name.Value] = method
+			class.Methods[m.Name.Value] = fun
 		}
 	}
 	i.popContext()
@@ -252,7 +292,7 @@ func (i *Interpreter) VisitFunctionDeclaration(node *FunctionDeclaration, env *E
 }
 
 func (i *Interpreter) VisitMethodDeclaration(node *MethodDeclaration, env *Environment) Object {
-	return nil
+	return &Function{Name: node.Name, Parameters: node.Params, Body: node.Body, Env: env, IsStatic: node.IsStatic, IsGetter: node.IsGetter}
 }
 
 func (i *Interpreter) VisitFunctionLiteral(node *FunctionLiteral, env *Environment) Object {
@@ -539,7 +579,7 @@ func (i *Interpreter) VisitCallExpression(node *CallExpression, env *Environment
 	callee := node.Callee.Accept(i, env)
 
 	if i.isError(callee) {
-		return i.newError("%s: %s", notFunctionError, callee.Inspect())
+		return callee
 	}
 
 	for _, argument := range node.Arguments {
@@ -581,6 +621,9 @@ func (i *Interpreter) applyBoundMethod(class Object, args []Object) Object {
 
 		extendedEnv := NewEnclosingEnvironment(bm.Method.Env)
 		extendedEnv.Set("this", bm.Receiver)
+		if bm.Receiver.Class.SuperClass != nil {
+			extendedEnv.Set("super", bm.Receiver.Class.SuperClass)
+		}
 
 		// Set parameters for the initializer
 		for idx, param := range bm.Method.Parameters {
@@ -594,6 +637,9 @@ func (i *Interpreter) applyBoundMethod(class Object, args []Object) Object {
 
 	extendedEnv := NewEnclosingEnvironment(bm.Method.Env)
 	extendedEnv.Set("this", bm.Receiver)
+	if bm.Receiver.Class.SuperClass != nil {
+		extendedEnv.Set("super", bm.Receiver.Class.SuperClass)
+	}
 
 	i.pushContext(ClassMethodContext)
 	defer func() { i.popContext() }()
@@ -632,6 +678,9 @@ func (i *Interpreter) instantiateClass(class Object, args []Object) Object {
 
 		newEnv := NewEnclosingEnvironment(initMethod.Env)
 		newEnv.Set("this", instance)
+		if instance.Class.SuperClass != nil {
+			newEnv.Set("super", instance.Class.SuperClass)
+		}
 		for idx, param := range initMethod.Parameters {
 			newEnv.Set(param.Value, args[idx])
 		}
