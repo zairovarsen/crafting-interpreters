@@ -156,7 +156,7 @@ func (i *Interpreter) newError(format string, args ...interface{}) Object {
 }
 
 func (i *Interpreter) VisitThisExpression(node *This, env *Environment) Object {
-	if i.currentContext().Type != ClassMethodContext {
+	if i.currentContext().Type != ClassMethodContext && i.currentContext().Type != InitializerContext {
 		return i.newError("%s: %s", invalidSyntax, "This not within class method")
 	}
 	if obj, ok := env.Get(node.Token.Lexeme); ok {
@@ -170,7 +170,7 @@ func (i *Interpreter) VisitSetExpression(node *SetExpression, env *Environment) 
 	object := node.Object.Accept(i, env)
 
 	if object.Type() != InstanceObj {
-		return i.newError("%s: %s", invalidSyntax, "Only instances have fields.")
+		return i.newError("%s: %s %s", invalidSyntax, "Only instances have fields.", object.Type())
 	}
 
 	instance := object.(*InstanceObject)
@@ -182,8 +182,20 @@ func (i *Interpreter) VisitSetExpression(node *SetExpression, env *Environment) 
 
 func (i *Interpreter) VisitGetExpression(node *GetExpression, env *Environment) Object {
 	object := node.Object.Accept(i, env)
+
+	if object.Type() == ClassObj {
+		class := object.(*ClassObject)
+		propertyName := node.Property.Value
+
+		if staticMethod, ok := class.StaticMethods[propertyName]; ok {
+			return staticMethod
+		}
+
+		return i.newError("%s: %s", invalidSyntax, fmt.Sprintf("Undefined static property '%s' on class '%s'", propertyName, class.Name))
+	}
+
 	if object.Type() != InstanceObj {
-		return i.newError("%s: %s", invalidSyntax, "Only instance have properties")
+		return i.newError("%s: %s %s", invalidSyntax, "Only instance have properties", object.Type())
 	}
 
 	instance := object.(*InstanceObject)
@@ -194,6 +206,10 @@ func (i *Interpreter) VisitGetExpression(node *GetExpression, env *Environment) 
 	}
 
 	if method, ok := instance.GetMethod(propertyName); ok {
+		bm := &BoundMethod{Method: method, Receiver: instance}
+		if method.IsGetter {
+			return i.applyBoundMethod(bm, nil)
+		}
 		return &BoundMethod{Method: method, Receiver: instance}
 	}
 
@@ -201,17 +217,25 @@ func (i *Interpreter) VisitGetExpression(node *GetExpression, env *Environment) 
 }
 
 func (i *Interpreter) VisitClassStatement(node *ClassStatement, env *Environment) Object {
-	class := &ClassObject{Name: node.Name, Methods: make(map[string]*Function)}
+	class := &ClassObject{Name: node.Name, Methods: make(map[string]*Function), StaticMethods: make(map[string]*Function)}
 	if node.Name == nil {
 		return i.newError("%s: %s", invalidSyntax, "missing class name in declaration")
 	}
 	i.pushContext(ClassMethodContext)
 	for _, m := range node.Methods {
-		method := &Function{Name: m.Name, Parameters: m.Params, Body: m.Body, Env: env}
+		method := &Function{Name: m.Name, Parameters: m.Params, Body: m.Body, Env: env, IsStatic: m.IsStatic, IsGetter: m.IsGetter}
 		if _, ok := class.Methods[m.Name.Value]; ok {
-			return i.newError("%s: %s", invalidSyntax, "duplicate method names")
+			return i.newError("%s: %s %s", invalidSyntax, "duplicate method name", m.Name.Value)
 		}
-		class.Methods[m.Name.Value] = method
+		if _, ok := class.StaticMethods[m.Name.Value]; ok {
+			return i.newError("%s: %s %s", invalidSyntax, "duplicate method name", m.Name.Value)
+		}
+
+		if m.IsStatic {
+			class.StaticMethods[m.Name.Value] = method
+		} else {
+			class.Methods[m.Name.Value] = method
+		}
 	}
 	i.popContext()
 	env.Set(node.Name.Value, class)
@@ -591,8 +615,9 @@ func (i *Interpreter) applyBoundMethod(class Object, args []Object) Object {
 func (i *Interpreter) instantiateClass(class Object, args []Object) Object {
 	cl, ok := class.(*ClassObject)
 	if !ok {
-		return i.newError("%s: %s", notClassError, class.Type())
+		return i.newError("%s: %s", invalidSyntax, class.Type())
 	}
+
 	instance := &InstanceObject{
 		Class:  cl,
 		Fields: make(map[string]Object),
@@ -672,7 +697,7 @@ func (i *Interpreter) VisitTernaryExpression(node *TernaryExpression, env *Envir
 func (i *Interpreter) VisitReturnStatement(node *ReturnStatement, env *Environment) Object {
 	var value Object
 
-	if i.currentContext().Type != FunctionContext && i.currentContext().Type != InitializerContext {
+	if i.currentContext().Type != FunctionContext && i.currentContext().Type != InitializerContext && i.currentContext().Type != ClassMethodContext {
 		return i.newError("%s: %s", invalidSyntax, "Cannot use 'return' outside of function")
 	}
 

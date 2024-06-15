@@ -396,7 +396,12 @@ func (p *Parser) primary() Expression {
 }
 
 func (p *Parser) parseMethodDeclaration() *MethodDeclaration {
-	method := &MethodDeclaration{}
+	method := &MethodDeclaration{IsStatic: false, IsGetter: false}
+
+	if p.check(STATIC) {
+		p.advance()
+		method.IsStatic = true
+	}
 
 	if !p.expectPeek(IDENTIFIER) {
 		return nil
@@ -405,12 +410,19 @@ func (p *Parser) parseMethodDeclaration() *MethodDeclaration {
 	method.Token = p.previous()
 	method.Name = &Identifier{Token: p.previous(), Value: p.previous().Lexeme}
 
-	if !p.expectPeek(LEFT_PAREN) {
+	switch p.peek().Type {
+	case LEFT_BRACKET:
+		method.IsGetter = true
+		method.Body = p.block()
+	case LEFT_PAREN:
+		p.advance()
+		method.Params = p.parseFunctionParams()
+		method.Body = p.block()
+	default:
+		err := &Error{Token: p.peek(), Message: "Invalid method declaration", Line: p.peek().Line}
+		p.addError(err)
 		return nil
 	}
-
-	method.Params = p.parseFunctionParams()
-	method.Body = p.block()
 
 	return method
 }

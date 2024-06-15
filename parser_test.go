@@ -114,6 +114,14 @@ func TestClassStatement(t *testing.T) {
 		serve(who) {
 			print("Enjoy your breakfast, " + who + ".");
 		}
+
+		area {
+			return this.radius * this.radius * 3.141592653;
+		}
+
+		static make() {
+			print("This is static method");
+		}
 	}`
 
 	program := createParseProgram(input)
@@ -127,8 +135,8 @@ func TestClassStatement(t *testing.T) {
 		t.Fatalf("Expected %T, got=%T", &ClassStatement{}, program.Statements[0])
 	}
 
-	if len(class.Methods) != 2 {
-		t.Errorf("Expected %d methods in class, got=%d\n", 2, len(class.Methods))
+	if len(class.Methods) != 4 {
+		t.Errorf("Expected %d methods in class, got=%d\n", 4, len(class.Methods))
 	}
 }
 

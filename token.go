@@ -57,6 +57,7 @@ const (
 	WHILE    = "WHILE"
 	BREAK    = "BREAK"
 	CONTINUE = "CONTINUE"
+	STATIC   = "STATIC"
 
 	EOF = "EOF"
 )
@@ -79,6 +80,7 @@ var reserved = map[string]TokenType{
 	"while":    WHILE,
 	"break":    BREAK,
 	"continue": CONTINUE,
+	"static":   STATIC,
 }
 
 type Token struct {

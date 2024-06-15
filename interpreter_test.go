@@ -28,6 +28,43 @@ func runInterpreter(input []byte) Object {
 	return interpreter.Interpret(program, env)
 }
 
+func TestGetter(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected float64
+	}{
+		{
+			`class Circle {
+				init(radius) {
+					this.radius = radius;
+				}
+
+				area {
+					return 3 * this.radius * this.radius;
+				}
+			} 
+			var circle = Circle(4);
+			circle.area;
+			`,
+			48,
+		},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if result.Type() != ReturnValueObj {
+			t.Fatalf("Expected %s, got=%s", ReturnValueObj, result.Type())
+		}
+
+		retVal := result.(*ReturnValueObject)
+
+		if !testLiteralObject(t, retVal.Value, test.expected) {
+			return
+		}
+	}
+}
+
 func TestThis(t *testing.T) {
 	tests := []struct {
 		code     string
@@ -531,7 +568,7 @@ func testLiteralObject(t *testing.T, obj Object, expected interface{}) bool {
 
 func testFloatObject(t *testing.T, obj Object, expected float64) bool {
 	if obj.Type() != FloatObj {
-		t.Errorf("object is not %T, got=%T", FloatObj, obj.Type())
+		t.Errorf("object is not %s, got=%s", FloatObj, obj.Type())
 		return false
 	}
 

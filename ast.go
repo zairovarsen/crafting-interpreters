@@ -159,12 +159,32 @@ func (fl *FunctionLiteral) Accept(visitor Visitor, env *Environment) Object {
 
 type MethodDeclaration struct {
 	FunctionCommon
+	IsStatic bool
+	IsGetter bool
 	// Receiver *Identifier //
 }
 
 func (md *MethodDeclaration) statementNode() {}
 func (md *MethodDeclaration) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitMethodDeclaration(md, env)
+}
+func (md *MethodDeclaration) String() string {
+	var str strings.Builder
+
+	var params []string
+	for _, p := range md.Params {
+		params = append(params, p.String())
+	}
+
+	if md.Name != nil {
+		str.WriteString(md.Name.String())
+	}
+	str.WriteString(LEFT_PAREN)
+	str.WriteString(strings.Join(params, COMMA+" "))
+	str.WriteString(RIGHT_PAREN)
+	str.WriteString(md.Body.String())
+
+	return str.String()
 }
 
 type ExpressionStatement struct {
@@ -219,7 +239,7 @@ func (b *BlockStatement) String() string {
 	var str strings.Builder
 
 	for _, stmt := range b.Statements {
-		str.WriteString(stmt.String())
+		str.WriteString("\t" + stmt.String())
 	}
 
 	return str.String()
@@ -325,6 +345,7 @@ func (se *SetExpression) String() string {
 	var str strings.Builder
 
 	str.WriteString(se.Object.String())
+	str.WriteString(".")
 	str.WriteString(se.Property.String())
 	str.WriteString("=")
 	str.WriteString(se.Value.String())

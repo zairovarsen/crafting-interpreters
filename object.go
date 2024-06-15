@@ -93,8 +93,9 @@ func (r *ReturnValueObject) Type() ObjectType { return ReturnValueObj }
 func (r *ReturnValueObject) Inspect() string  { return r.Value.Inspect() }
 
 type ClassObject struct {
-	Name    *Identifier
-	Methods map[string]*Function
+	Name          *Identifier
+	Methods       map[string]*Function
+	StaticMethods map[string]*Function
 }
 
 func (c *ClassObject) Type() ObjectType { return ClassObj }
@@ -102,6 +103,9 @@ func (c *ClassObject) Inspect() string {
 	var str strings.Builder
 
 	var methods []string
+	for _, m := range c.StaticMethods {
+		methods = append(methods, m.Inspect())
+	}
 	for _, m := range c.Methods {
 		methods = append(methods, m.Inspect())
 	}
@@ -110,9 +114,9 @@ func (c *ClassObject) Inspect() string {
 	if c.Name != nil {
 		str.WriteString(" " + c.Name.Value)
 	}
-	str.WriteString("{\n")
+	str.WriteString(" {\n")
 	str.WriteString(strings.Join(methods, "\n"))
-	str.WriteString("}")
+	str.WriteString("\n}")
 
 	return str.String()
 }
@@ -160,6 +164,8 @@ type Function struct {
 	Parameters []*Identifier
 	Body       *BlockStatement
 	Env        *Environment // capture current environment for closures
+	IsStatic   bool
+	IsGetter   bool
 }
 
 func (f *Function) Type() ObjectType { return FunctionObj }
@@ -171,13 +177,22 @@ func (f *Function) Inspect() string {
 		params = append(params, p.String())
 	}
 
-	str.WriteString("function")
-	if f.Name != nil {
-		str.WriteString(" " + f.Name.Value)
+	if f.IsStatic {
+		str.WriteString("static ")
 	}
-	str.WriteString("(")
-	str.WriteString(strings.Join(params, ", "))
-	str.WriteString(") {\n")
+	if !f.IsGetter {
+		str.WriteString("function ")
+	}
+	if f.Name != nil {
+		str.WriteString(f.Name.Value)
+	}
+	if !f.IsGetter {
+		str.WriteString("(")
+		str.WriteString(strings.Join(params, ", "))
+		str.WriteString(") {\n")
+	} else {
+		str.WriteString(" {\n")
+	}
 	str.WriteString(f.Body.String())
 	str.WriteString("\n}")
 
