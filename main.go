@@ -1,87 +1,105 @@
 package main
 
-import (
-	"bufio"
-	"fmt"
-	"io"
-	"os"
-)
+import "fmt"
 
 func main() {
-	var err error
+	chunk := newChunk()
+	constant := int(chunk.WriteValue(1.2))
+	chunk.WriteChunk(OP_CONSTANT, 1, constant)
 
-	if len(os.Args) > 2 {
-		fmt.Fprint(os.Stderr, "Usage: jlox [script]\n")
-		os.Exit(64)
-	} else if len(os.Args) == 2 {
-		err = runFile(os.Args[0])
-	} else {
-		err = runPrompt()
-	}
+	constant = int(chunk.WriteValue(3.4))
+	chunk.WriteChunk(OP_CONSTANT, 1, constant)
+	chunk.WriteChunk(OP_ADD, 1)
 
+	constant = int(chunk.WriteValue(5.6))
+	chunk.WriteChunk(OP_CONSTANT, 1, constant)
+
+	chunk.WriteChunk(OP_DIVIDE, 1)
+	chunk.WriteChunk(OP_NEGATE, 1)
+	chunk.WriteChunk(OP_RETURN, 1)
+
+	vm := newVM(chunk)
+	err := vm.run()
 	if err != nil {
-		fmt.Fprint(os.Stderr, err)
+		fmt.Println(err)
 	}
 }
 
-func runFile(file string) error {
-	fp, err := os.Open(file)
-	if err != nil {
-		return err
-	}
+// func main() {
+// 	var err error
 
-	input, err := io.ReadAll(fp)
-	if err != nil {
-		return err
-	}
+// 	if len(os.Args) > 2 {
+// 		fmt.Fprint(os.Stderr, "Usage: jlox [script]\n")
+// 		os.Exit(64)
+// 	} else if len(os.Args) == 2 {
+// 		err = runFile(os.Args[0])
+// 	} else {
+// 		err = runPrompt()
+// 	}
 
-	env := NewEnvironment()
-	run(input[:], env)
-	return nil
-}
+// 	if err != nil {
+// 		fmt.Fprint(os.Stderr, err)
+// 	}
+// }
 
-func runPrompt() error {
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Fprint(os.Stdin, ">>> ")
-	env := NewEnvironment()
+// func runFile(file string) error {
+// 	fp, err := os.Open(file)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	for scanner.Scan() {
-		text := scanner.Text()
-		if text == "" {
-			break
-		}
-		run([]byte(text), env)
-		fmt.Fprint(os.Stdin, ">>> ")
-	}
+// 	input, err := io.ReadAll(fp)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	if err := scanner.Err(); err != nil {
-		return err
-	}
+// 	env := NewEnvironment()
+// 	run(input[:], env)
+// 	return nil
+// }
 
-	return nil
-}
+// func runPrompt() error {
+// 	scanner := bufio.NewScanner(os.Stdin)
+// 	fmt.Fprint(os.Stdin, ">>> ")
+// 	env := NewEnvironment()
 
-func run(input []byte, env *Environment) {
-	scanner := NewScanner(input)
-	scanner.scanTokens()
+// 	for scanner.Scan() {
+// 		text := scanner.Text()
+// 		if text == "" {
+// 			break
+// 		}
+// 		run([]byte(text), env)
+// 		fmt.Fprint(os.Stdin, ">>> ")
+// 	}
 
-	if scanner.Errors.HasErrors() {
-		scanner.Errors.PrintErrors()
-		return
-	}
+// 	if err := scanner.Err(); err != nil {
+// 		return err
+// 	}
 
-	// fmt.Println(scanner.Tokens)
-	parser := NewParser(scanner.Tokens)
-	expr := parser.parse()
+// 	return nil
+// }
 
-	if parser.Errors.HasErrors() {
-		parser.Errors.PrintErrors()
-		return
-	}
+// func run(input []byte, env *Environment) {
+// 	scanner := NewScanner(input)
+// 	scanner.scanTokens()
 
-	interpreter := NewInterpreter()
-	result := interpreter.Interpret(expr, env)
-	if result != nil {
-		fmt.Println(result.Inspect())
-	}
-}
+// 	if scanner.Errors.HasErrors() {
+// 		scanner.Errors.PrintErrors()
+// 		return
+// 	}
+
+// 	// fmt.Println(scanner.Tokens)
+// 	parser := NewParser(scanner.Tokens)
+// 	expr := parser.parse()
+
+// 	if parser.Errors.HasErrors() {
+// 		parser.Errors.PrintErrors()
+// 		return
+// 	}
+
+// 	interpreter := NewInterpreter()
+// 	result := interpreter.Interpret(expr, env)
+// 	if result != nil {
+// 		fmt.Println(result.Inspect())
+// 	}
+// }
