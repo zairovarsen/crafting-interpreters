@@ -168,6 +168,48 @@ func TestThis(t *testing.T) {
 	}
 }
 
+func TestIndex(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected float64
+	}{
+		{
+			`var a = ["hello world", 2, 3][2];
+			a;`,
+			3,
+		},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if !testLiteralObject(t, result, test.expected) {
+			return
+		}
+	}
+}
+
+func TestHash(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected float64
+	}{
+		{
+			`var a = {"a": 123, "b": 324};
+			a["b"];`,
+			324,
+		},
+	}
+
+	for _, test := range tests {
+		result := runInterpreter([]byte(test.code))
+
+		if !testLiteralObject(t, result, test.expected) {
+			return
+		}
+	}
+}
+
 func TestSetProperty(t *testing.T) {
 	tests := []struct {
 		code     string
@@ -224,7 +266,8 @@ func TestRecursion(t *testing.T) {
 			`function fib(a) {
 	  if (a == 0) {
 	    return 0;
-	  } else if (a == 1) {
+	  } 
+	  if (a == 1) {
 	    return 1;
 	  } else {
 	    return fib(a - 2) + fib(a - 1);
@@ -548,63 +591,6 @@ func TestBooleanObject(t *testing.T) {
 
 		if !testBooleanObject(t, result, test.expected) {
 			return
-		}
-	}
-}
-
-func TestBlockStatements(t *testing.T) {
-	tests := []struct {
-		code     string
-		expected string
-	}{
-		{
-			code: `
-				var a = "global a";
-				var b = "global b";
-				var c = "global c";
-				{
-					var a = "outer a";
-					var b = "outer b";
-					{
-						var a = "inner a";
-						print(a);
-						print(b);
-						print(c);
-					}
-					print(a);
-					print(b);
-					print(c);
-				}
-				print(a);
-				print(b);
-				print(c);
-			`,
-			expected: "inner a\nouter b\nglobal c\nouter a\nouter b\nglobal c\nglobal a\nglobal b\nglobal c\n",
-		},
-	}
-
-	for _, test := range tests {
-
-		// Save the current stdout
-		originalStdout := os.Stdout
-
-		// Create a pipe to capture stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-
-		// Run the interpreter
-		runInterpreter([]byte(test.code))
-
-		// Close the writer and restore stdout
-		w.Close()
-		os.Stdout = originalStdout
-
-		// Read the output
-		var buf bytes.Buffer
-		io.Copy(&buf, r)
-
-		if buf.String() != test.expected {
-			t.Errorf("Expected %s, got=%s", test.expected, buf.String())
 		}
 	}
 }

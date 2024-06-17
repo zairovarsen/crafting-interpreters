@@ -54,8 +54,8 @@ func (p *Program) Accept(visitor Visitor, env *Environment) Object {
 type IfStatement struct {
 	Token      Token
 	Condition  Expression
-	ThenBranch Statement
-	ElseBranch Statement
+	ThenBranch *BlockStatement
+	ElseBranch *BlockStatement
 }
 
 func (is *IfStatement) statementNode() {}
@@ -708,4 +708,78 @@ func (w *While) String() string {
 }
 func (w *While) Accept(visitor Visitor, env *Environment) Object {
 	return visitor.VisitWhileStatement(w, env)
+}
+
+type ArrayLiteral struct {
+	Token    Token
+	Elements []Expression
+}
+
+func (al *ArrayLiteral) expressionNode()      {}
+func (al *ArrayLiteral) TokenLiteral() string { return al.Token.Lexeme }
+func (al *ArrayLiteral) String() string {
+	var str strings.Builder
+
+	var elements []string
+	for _, el := range al.Elements {
+		elements = append(elements, el.String())
+	}
+
+	str.WriteString(LEFT_BRACKET)
+	str.WriteString(strings.Join(elements, COMMA+" "))
+	str.WriteString(RIGHT_BRACKET)
+
+	return str.String()
+}
+func (al *ArrayLiteral) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitArrayLiteral(al, env)
+}
+
+type IndexExpression struct {
+	Token Token
+	Left  Expression
+	Index Expression
+}
+
+func (ie *IndexExpression) expressionNode()      {}
+func (ie *IndexExpression) TokenLiteral() string { return ie.Token.Lexeme }
+func (ie *IndexExpression) String() string {
+	var str strings.Builder
+
+	str.WriteString(LEFT_PAREN)
+	str.WriteString(ie.Left.String())
+	str.WriteString(LEFT_BRACKET)
+	str.WriteString(ie.Index.String())
+	str.WriteString(RIGHT_BRACKET)
+	str.WriteString(RIGHT_PAREN)
+
+	return str.String()
+}
+func (ie *IndexExpression) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitIndexExpression(ie, env)
+}
+
+type HashLiteral struct {
+	Token Token
+	Pairs map[Expression]Expression
+}
+
+func (hl *HashLiteral) expressionNode()      {}
+func (hl *HashLiteral) TokenLiteral() string { return hl.Token.Lexeme }
+func (hl *HashLiteral) String() string {
+	var str strings.Builder
+
+	var pairs []string
+	for key, value := range hl.Pairs {
+		pairs = append(pairs, key.String()+COLON+value.String())
+	}
+
+	str.WriteString(LEFT_BRACKET)
+	str.WriteString(strings.Join(pairs, COMMA+" "))
+	str.WriteString(RIGHT_BRACKET)
+
+	return str.String()
+}
+func (hl *HashLiteral) Accept(visitor Visitor, env *Environment) Object {
+	return visitor.VisitHashLiteral(hl, env)
 }

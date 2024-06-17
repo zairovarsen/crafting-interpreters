@@ -101,8 +101,6 @@ func (p *Parser) statement() Statement {
 		return p.forStatement()
 	case WHILE:
 		return p.whileStatement()
-	case LEFT_BRACKET:
-		return p.block()
 	case IF:
 		return p.ifStatement()
 	case RETURN:
@@ -254,9 +252,9 @@ func (p *Parser) ifStatement() *IfStatement {
 		return nil
 	}
 
-	stmt.ThenBranch = p.statement()
+	stmt.ThenBranch = p.block()
 	if p.match(ELSE) {
-		stmt.ElseBranch = p.statement()
+		stmt.ElseBranch = p.block()
 	}
 
 	return stmt
@@ -390,6 +388,39 @@ func (p *Parser) primary() Expression {
 		if p.expectPeek(RIGHT_PAREN) {
 			return &GroupedExpression{Token: p.previous(), Expression: expr}
 		}
+	}
+	if p.match(LEFT_BRACKET) {
+		hash := &HashLiteral{Token: p.previous()}
+		hash.Pairs = make(map[Expression]Expression)
+
+		for !p.isAtEnd() && !p.check(RIGHT_BRACKET) {
+			key := p.expression()
+
+			if !p.expectPeek(COLON) {
+				return nil
+			}
+
+			value := p.expression()
+			hash.Pairs[key] = value
+
+			if !p.check(RIGHT_BRACKET) && !p.check(COMMA) {
+				return nil
+			}
+			if p.check(COMMA) {
+				p.advance()
+			}
+		}
+
+		if !p.expectPeek(RIGHT_BRACKET) {
+			return nil
+		}
+
+		return hash
+	}
+	if p.match(LEFT_BRACE) {
+		array := &ArrayLiteral{Token: p.previous()}
+		array.Elements = p.parseExpressionList(RIGHT_BRACE)
+		return array
 	}
 	if p.match(IDENTIFIER) {
 		return &Identifier{
@@ -533,6 +564,14 @@ func (p *Parser) call() Expression {
 	expr := p.primary()
 
 	for {
+		if p.match(LEFT_BRACE) {
+			index := &IndexExpression{Left: expr, Token: p.previous()}
+			index.Index = p.expression()
+			if !p.expectPeek(RIGHT_BRACE) {
+				return nil
+			}
+			return index
+		}
 		if p.match(LEFT_PAREN) {
 			operator := p.previous()
 			exp := &CallExpression{Token: operator, Callee: expr}

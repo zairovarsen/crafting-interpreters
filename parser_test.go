@@ -16,6 +16,105 @@ func createParseProgram(input string) *Program {
 	return program
 }
 
+func TestHashLiteral(t *testing.T) {
+	input := `{"hello world": true, "asd": 3, "something": 1 + 1};`
+	expected := map[string]interface{}{
+		"hello world": true,
+		"asd":         3,
+		"something":   2,
+	}
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	expr, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+	}
+
+	hash, ok := expr.Expression.(*HashLiteral)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &HashLiteral{}, expr.Expression)
+	}
+
+	if len(hash.Pairs) != 3 {
+		t.Errorf("Expected length of hash pairs to be %d, got=%d", 3, len(hash.Pairs))
+	}
+
+	for key, value := range hash.Pairs {
+		if testLiteral(t, value, expected[key.String()]) {
+			return
+		}
+	}
+}
+
+func TestIndexExpression(t *testing.T) {
+	input := `someArray[1 + 1];`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	expr, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+	}
+
+	index, ok := expr.Expression.(*IndexExpression)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &IndexExpression{}, expr.Expression)
+	}
+
+	if !testLiteral(t, index.Left, "someArray") {
+		return
+	}
+
+	if !testLiteral(t, index.Index, 2) {
+		return
+	}
+}
+
+func TestParsingArrayLiteral(t *testing.T) {
+	input := `[1, "hello world", true];`
+
+	program := createParseProgram(input)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain %d statements. got=%d\n", 1, len(program.Statements))
+	}
+
+	expr, ok := program.Statements[0].(*ExpressionStatement)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ExpressionStatement{}, program.Statements[0])
+	}
+
+	array, ok := expr.Expression.(*ArrayLiteral)
+	if !ok {
+		t.Fatalf("Expected %T, got=%T", &ArrayLiteral{}, expr.Expression)
+	}
+
+	if len(array.Elements) != 3 {
+		t.Errorf("Expected array length to be %d, got=%d", 3, len(array.Elements))
+	}
+
+	if !testLiteral(t, array.Elements[0], 1) {
+		return
+	}
+
+	if !testLiteral(t, array.Elements[1], "hello world") {
+		return
+	}
+
+	if !testLiteral(t, array.Elements[2], true) {
+		return
+	}
+}
+
 func TestSetExpression(t *testing.T) {
 	input := `breakfast.omelette.filling.meat = ham;`
 
@@ -573,13 +672,8 @@ func TestIfStatement(t *testing.T) {
 		return
 	}
 
-	block, ok := ifstmt.ThenBranch.(*BlockStatement)
-	if !ok {
-		t.Errorf("Expected %T, got=%T", &BlockStatement{}, ifstmt.ThenBranch)
-	}
-
-	if len(block.Statements) != 1 {
-		t.Errorf("Expected length of then to be %d, got=%d", 1, len(block.Statements))
+	if len(ifstmt.ThenBranch.Statements) != 1 {
+		t.Errorf("Expected length of then to be %d, got=%d", 1, len(ifstmt.ThenBranch.Statements))
 	}
 }
 
@@ -601,62 +695,23 @@ func TestIfElseStatement(t *testing.T) {
 		return
 	}
 
-	then, ok := ifstmt.ThenBranch.(*BlockStatement)
-	if !ok {
-		t.Errorf("Expected %T, got=%T", &BlockStatement{}, ifstmt.ThenBranch)
+	if len(ifstmt.ThenBranch.Statements) != 1 {
+		t.Errorf("Expected length of then to be %d, got=%d", 1, len(ifstmt.ThenBranch.Statements))
 	}
 
-	if len(then.Statements) != 1 {
-		t.Errorf("Expected length of then to be %d, got=%d", 1, len(then.Statements))
-	}
-
-	thenExpr, ok := then.Statements[0].(*ExpressionStatement)
+	thenExpr, ok := ifstmt.ThenBranch.Statements[0].(*ExpressionStatement)
 
 	if !testLiteral(t, thenExpr.Expression, "x") {
 		return
 	}
 
-	alternative, ok := ifstmt.ElseBranch.(*BlockStatement)
-	if !ok {
-		t.Errorf("Expected %T, got=%T", &BlockStatement{}, ifstmt.ThenBranch)
+	if len(ifstmt.ElseBranch.Statements) != 1 {
+		t.Errorf("Expected length of alternative to be %d, got=%d", 1, len(ifstmt.ElseBranch.Statements))
 	}
 
-	if len(alternative.Statements) != 1 {
-		t.Errorf("Expected length of alternative to be %d, got=%d", 1, len(alternative.Statements))
-	}
-
-	alternativeExpr, ok := alternative.Statements[0].(*ExpressionStatement)
+	alternativeExpr, ok := ifstmt.ElseBranch.Statements[0].(*ExpressionStatement)
 
 	if !testLiteral(t, alternativeExpr.Expression, "y") {
-		return
-	}
-}
-
-func TestBlockStatement(t *testing.T) {
-	input := `
-		{
-			var a = 10;
-			var b = 20;
-			c = a + b;
-		}
-	`
-
-	program := createParseProgram(input)
-
-	if len(program.Statements) != 1 {
-		t.Fatalf("Expected length of statements to be %d, got=%d", 3, len(program.Statements))
-	}
-
-	block, ok := program.Statements[0].(*BlockStatement)
-	if !ok {
-		t.Errorf("Expected=%T, got=%T", &BlockStatement{}, program.Statements[0])
-	}
-
-	if len(block.Statements) != 3 {
-		t.Errorf("Expected length of block statements to be %d, got=%d", 3, len(program.Statements))
-	}
-
-	if !testVarStatement(t, block.Statements[0], "a", 10) {
 		return
 	}
 }

@@ -72,6 +72,9 @@ type Visitor interface {
 	VisitSetExpression(node *SetExpression, env *Environment) Object
 	VisitThisExpression(node *This, env *Environment) Object
 	VisitSuper(node *Super, env *Environment) Object
+	VisitArrayLiteral(node *ArrayLiteral, env *Environment) Object
+	VisitIndexExpression(node *IndexExpression, env *Environment) Object
+	VisitHashLiteral(node *HashLiteral, env *Environment) Object
 }
 
 type Interpreter struct {
@@ -155,6 +158,54 @@ func (i *Interpreter) isTruthy(value Object) bool {
 func (i *Interpreter) newError(format string, args ...interface{}) Object {
 	msg := fmt.Sprintf(format, args...)
 	return &ErrorObject{msg}
+}
+
+func (i *Interpreter) VisitIndexExpression(node *IndexExpression, env *Environment) Object {
+	left := node.Left.Accept(i, env)
+	if i.isError(left) {
+		return left
+	}
+
+	index := node.Index.Accept(i, env)
+	if i.isError(index) {
+		return index
+	}
+
+	return i.evalIndexExpression(left, index)
+}
+
+func (i *Interpreter) VisitArrayLiteral(node *ArrayLiteral, env *Environment) Object {
+	elements := i.evalExpressions(node.Elements, env)
+	if len(elements) == 1 && i.isError(elements[0]) {
+		return elements[0]
+	}
+	return &Array{Elements: elements}
+}
+
+func (i *Interpreter) VisitHashLiteral(node *HashLiteral, env *Environment) Object {
+	pairs := make(map[HashKey]HashPair)
+
+	for keyNode, valueNode := range node.Pairs {
+		key := keyNode.Accept(i, env)
+		if i.isError(key) {
+			return key
+		}
+
+		hashKey, ok := key.(Hashable)
+		if !ok {
+			return i.newError("%s: %s", invalidSyntax, "unusable hash key")
+		}
+
+		value := valueNode.Accept(i, env)
+		if i.isError(value) {
+			return value
+		}
+
+		hashed := hashKey.HashKey()
+		pairs[hashed] = HashPair{Key: key, Value: value}
+	}
+
+	return &Hash{Pairs: pairs}
 }
 
 func (i *Interpreter) VisitSuper(node *Super, env *Environment) Object {
@@ -791,6 +842,60 @@ func (i *Interpreter) executeBlock(statements []Statement, env *Environment) Obj
 	}
 
 	return nil
+}
+
+func (i *Interpreter) evalExpressions(exps []Expression, env *Environment) []Object {
+	var result []Object
+
+	for _, e := range exps {
+		expr := e.Accept(i, env)
+		if i.isError(expr) {
+			return []Object{expr}
+		}
+		result = append(result, expr)
+	}
+
+	return result
+}
+
+func (i *Interpreter) evalIndexExpression(left, index Object) Object {
+	switch {
+	case left.Type() == ArrayObj && index.Type() == FloatObj:
+		return i.evalArrayIndexExpression(left, index)
+	case left.Type() == HashObj:
+		return i.evalHashExpression(left, index)
+	default:
+		return i.newError("%s: %s", invalidSyntax, "index operator not supported")
+
+	}
+}
+
+func (i *Interpreter) evalHashExpression(hash, index Object) Object {
+	hashObject := hash.(*Hash)
+
+	key, ok := index.(Hashable)
+	if !ok {
+		return i.newError("%s: %s", invalidSyntax, fmt.Sprintf("unusable hash key %s", index.Type()))
+	}
+
+	pair, ok := hashObject.Pairs[key.HashKey()]
+	if !ok {
+		return Null
+	}
+
+	return pair.Value
+}
+
+func (i *Interpreter) evalArrayIndexExpression(array, index Object) Object {
+	arrayObj := array.(*Array)
+	idx := int(index.(*FloatObject).Value)
+	max := len(arrayObj.Elements) - 1
+
+	if idx < 0 || idx > max {
+		return Null
+	}
+
+	return arrayObj.Elements[idx]
 }
 
 func (i *Interpreter) VisitExpressionStatement(node *ExpressionStatement, env *Environment) Object {

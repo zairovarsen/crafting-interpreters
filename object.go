@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strings"
 )
 
@@ -64,6 +65,9 @@ type FloatObject struct {
 
 func (f *FloatObject) Type() ObjectType { return FloatObj }
 func (f *FloatObject) Inspect() string  { return fmt.Sprintf("%.0f", f.Value) }
+func (f *FloatObject) HashKey() HashKey {
+	return HashKey{Type: f.Type(), Value: int64(f.Value)}
+}
 
 type BooleanObject struct {
 	Value bool
@@ -71,6 +75,17 @@ type BooleanObject struct {
 
 func (b *BooleanObject) Type() ObjectType { return BooleanObj }
 func (b *BooleanObject) Inspect() string  { return fmt.Sprintf("%t", b.Value) }
+func (b *BooleanObject) HashKey() HashKey {
+	var value int64
+
+	if b.Value {
+		value = 1
+	} else {
+		value = 0
+	}
+
+	return HashKey{Type: b.Type(), Value: value}
+}
 
 type StringObject struct {
 	Value string
@@ -78,6 +93,12 @@ type StringObject struct {
 
 func (s *StringObject) Type() ObjectType { return StringObj }
 func (s *StringObject) Inspect() string  { return s.Value }
+func (s *StringObject) HashKey() HashKey {
+	h := fnv.New64a()
+	h.Write([]byte(s.Value))
+
+	return HashKey{Type: s.Type(), Value: int64(h.Sum64())}
+}
 
 type NilObject struct {
 }
@@ -232,6 +253,60 @@ func (f *Function) Inspect() string {
 	}
 	str.WriteString(f.Body.String())
 	str.WriteString("\n}")
+
+	return str.String()
+}
+
+type Array struct {
+	Elements []Object
+}
+
+func (ao *Array) Type() ObjectType { return ArrayObj }
+func (ao *Array) Inspect() string {
+	var str strings.Builder
+
+	var elements []string
+	for _, e := range ao.Elements {
+		elements = append(elements, e.Inspect())
+	}
+
+	str.WriteString("[")
+	str.WriteString(strings.Join(elements, ", "))
+	str.WriteString("]")
+
+	return str.String()
+}
+
+type HashKey struct {
+	Type  ObjectType
+	Value int64
+}
+
+type Hashable interface {
+	HashKey() HashKey
+}
+
+type HashPair struct {
+	Key   Object
+	Value Object
+}
+
+type Hash struct {
+	Pairs map[HashKey]HashPair
+}
+
+func (h *Hash) Type() ObjectType { return HashObj }
+func (h *Hash) Inspect() string {
+	var str strings.Builder
+
+	var pairs []string
+	for _, pair := range h.Pairs {
+		pairs = append(pairs, fmt.Sprintf("%s: %s", pair.Key.Inspect(), pair.Value.Inspect()))
+	}
+
+	str.WriteString(LEFT_BRACE)
+	str.WriteString(strings.Join(pairs, COMMA))
+	str.WriteString(RIGHT_BRACE)
 
 	return str.String()
 }
