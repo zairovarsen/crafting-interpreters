@@ -6,17 +6,25 @@ import (
 
 type Scanner struct {
 	source  []byte
-	start   int
-	current int
-	line    int
-	Tokens  []*Token
-	Errors  *ErrorHandler
+	start   int // start of the new scanned token
+	current int // current char
+	line    int // line identifying token
+	tokens  []*Token
+	errors  *ErrorHandler
 }
 
 func NewScanner(source []byte) *Scanner {
 	tokens := make([]*Token, 0)
 	errors := NewErrorHandler()
 	return &Scanner{source, 0, 0, 1, tokens, errors}
+}
+
+func (s *Scanner) Tokens() []*Token {
+	return s.tokens
+}
+
+func (s *Scanner) Errors() *ErrorHandler {
+	return s.errors
 }
 
 func (s *Scanner) isAtEnd() bool {
@@ -43,12 +51,12 @@ func (s *Scanner) isAlpha(c byte) bool {
 }
 
 func (s *Scanner) addError(err *Error) {
-	s.Errors.AddError(err)
+	s.errors.AddError(err)
 }
 
 func (s *Scanner) addToken(tokenType TokenType, lexeme string) {
 	token := NewToken(tokenType, lexeme, s.line)
-	s.Tokens = append(s.Tokens, token)
+	s.tokens = append(s.tokens, token)
 }
 
 func (s *Scanner) advance() byte {
@@ -80,7 +88,7 @@ func (s *Scanner) scanTokens() []*Error {
 	return nil
 }
 
-func (s *Scanner) getNumber() {
+func (s *Scanner) num() {
 	for s.isDigit(s.peek()) {
 		s.advance()
 	}
@@ -118,7 +126,7 @@ func (s *Scanner) peekNext() byte {
 	return s.source[s.current+1]
 }
 
-func (s *Scanner) getString() {
+func (s *Scanner) str() {
 	for s.peek() != '"' && !s.isAtEnd() {
 		if s.peek() == '\n' {
 			s.line++
@@ -208,10 +216,10 @@ func (s *Scanner) scanToken() {
 		s.line++
 		break
 	case '"':
-		s.getString()
+		s.str()
 	default:
 		if s.isDigit(c) {
-			s.getNumber()
+			s.num()
 		} else if s.isAlpha(c) {
 			s.identifier()
 		} else {

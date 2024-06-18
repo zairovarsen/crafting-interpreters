@@ -6,8 +6,8 @@ import (
 )
 
 type Parser struct {
-	Errors  *ErrorHandler
-	Tokens  []*Token
+	errors  *ErrorHandler
+	tokens  []*Token
 	current int
 }
 
@@ -15,14 +15,18 @@ func NewParser(tokens []*Token) *Parser {
 	errors := NewErrorHandler()
 
 	return &Parser{
-		Tokens:  tokens,
+		tokens:  tokens,
 		current: 0,
-		Errors:  errors,
+		errors:  errors,
 	}
 }
 
+func (p *Parser) Errors() *ErrorHandler {
+	return p.errors
+}
+
 func (p *Parser) addError(err *Error) {
-	p.Errors.AddError(err)
+	p.errors.AddError(err)
 }
 
 func (p *Parser) match(types ...TokenType) bool {
@@ -37,11 +41,11 @@ func (p *Parser) match(types ...TokenType) bool {
 }
 
 func (p *Parser) peek() Token {
-	return *p.Tokens[p.current]
+	return *p.tokens[p.current]
 }
 
 func (p *Parser) previous() Token {
-	return *p.Tokens[p.current-1]
+	return *p.tokens[p.current-1]
 }
 
 func (p *Parser) isAtEnd() bool {
