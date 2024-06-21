@@ -5,15 +5,20 @@ import (
 	"fmt"
 )
 
+const (
+	UINT16_MAX = 1 << 16
+)
+
 type LineInfo struct {
 	Line  int
 	Count int
 }
 
 type Compiler struct {
-	Code      Instructions
-	Constants []Object
-	LineInfo  []LineInfo
+	Code        Instructions
+	Constants   []Object
+	LineInfo    []LineInfo
+	SymbolTable *SymbolTable
 }
 
 type ByteCode struct {
@@ -29,7 +34,18 @@ func (c *Compiler) ByteCode() *ByteCode {
 }
 
 func NewCompiler() *Compiler {
-	return &Compiler{Code: make([]byte, 0), Constants: make([]Object, 0), LineInfo: make([]LineInfo, 0)}
+
+	symbolTable := NewSymbolTable()
+
+	for name, _ := range builtins {
+		symbolTable.DefineBuiltin(name)
+	}
+
+	return &Compiler{Code: make([]byte, 0), Constants: make([]Object, 0), LineInfo: make([]LineInfo, 0), SymbolTable: symbolTable}
+}
+
+func NewCompilerWithState(symbolTable *SymbolTable) *Compiler {
+	return &Compiler{Code: make([]byte, 0), Constants: make([]Object, 0), LineInfo: make([]LineInfo, 0), SymbolTable: symbolTable}
 }
 
 func ReadUint16(ins Instructions) uint16 {
@@ -47,9 +63,14 @@ func (c *Compiler) MakeConstant(value Object) int {
 func (c *Compiler) DisassembleChunks() {
 	var offset int
 
+	fmt.Println(len(c.Code))
 	for offset < len(c.Code) {
 		offset = c.disassembleInstruction(offset)
 	}
+}
+
+func (c *Compiler) WriteByte(b byte) {
+	c.Code = append(c.Code, b)
 }
 
 func (c *Compiler) WriteChunk(opcode OpCode, line int, operands ...int) {
@@ -101,6 +122,68 @@ func (c *Compiler) Compile(ast Node) error {
 		if err != nil {
 			return err
 		}
+		// c.WriteChunk(OP_POP, node.Token.Line)
+	case *BlockStatement:
+		for _, s := range node.Statements {
+			err := c.Compile(s)
+			if err != nil {
+				return err
+			}
+		}
+	case *VarStatement:
+		_, ok := c.SymbolTable.ResolveInner(node.Identifier.Value)
+		if ok {
+			return fmt.Errorf("Already variable with this name in this scope: %s", node.Identifier.Value)
+		}
+		symbol := c.SymbolTable.Define(node.Identifier.Value)
+
+		if node.Expression != nil {
+			err := c.Compile(node.Expression)
+			if err != nil {
+				return err
+			}
+		} else {
+			c.WriteChunk(OP_NIL, node.Token.Line)
+		}
+
+		if symbol.Scope == GLOBAL_SCOPE {
+			c.WriteChunk(OP_DEFINE_GLOBAL, node.Token.Line, symbol.Index)
+		} else {
+			c.WriteChunk(OP_DEFINE_LOCAL, node.Token.Line, symbol.Index)
+		}
+	case *Assignment:
+		if symbol, ok := c.SymbolTable.Resolve(node.Identifier.Value); !ok {
+			return fmt.Errorf("Undeclared identifier: %s", node.Identifier.Value)
+		} else {
+			if node.Expression != nil {
+				err := c.Compile(node.Expression)
+				if err != nil {
+					return err
+				}
+			} else {
+				c.WriteChunk(OP_NIL, node.Token.Line)
+			}
+
+			if symbol.Scope == GLOBAL_SCOPE {
+				c.WriteChunk(OP_SET_GLOBAL, node.Token.Line, symbol.Index)
+			} else {
+				c.WriteChunk(OP_SET_LOCAL, node.Token.Line, symbol.Index)
+			}
+		}
+	case *Identifier:
+		symbol, ok := c.SymbolTable.Resolve(node.Value)
+		if !ok {
+			return fmt.Errorf("Undefined variable: %s", node.Value)
+		}
+		switch symbol.Scope {
+		case GLOBAL_SCOPE:
+			c.WriteChunk(OP_GET_GLOBAL, node.Token.Line, symbol.Index)
+		case LOCAL_SCOPE:
+			c.WriteChunk(OP_GET_LOCAL, node.Token.Line, symbol.Index)
+		}
+	case *StringLiteral:
+		value := &StringObject{Value: node.Value}
+		c.WriteChunk(OP_CONSTANT, node.Token.Line, c.MakeConstant(value))
 	case *NumberLiteral:
 		value := &FloatObject{Value: node.Value}
 		c.WriteChunk(OP_CONSTANT, node.Token.Line, c.MakeConstant(value))
@@ -165,9 +248,56 @@ func (c *Compiler) Compile(ast Node) error {
 			c.WriteChunk(OP_GREATER, node.Token.Line)
 			c.WriteChunk(OP_NOT, node.Token.Line)
 		}
+	case *IfStatement:
+		condition := c.Compile(node.Condition)
+		if condition != nil {
+			return condition
+		}
+
+		c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
+		thenJump := len(c.Code) - 2 // offset of the emitted instruction
+		c.WriteChunk(OP_POP, node.Token.Line)
+
+		err := c.Compile(node.ThenBranch)
+		if err != nil {
+			return err
+		}
+
+		err = c.patchJump(thenJump)
+		if err != nil {
+			return err
+		}
+		c.WriteChunk(OP_POP, node.Token.Line)
+
+		c.WriteChunk(OP_JUMP, node.Token.Line, 9999)
+		elseJump := len(c.Code) - 2
+
+		err = c.Compile(node.ElseBranch)
+		if err != nil {
+			return err
+		}
+
+		c.patchJump(elseJump)
 	}
 
 	return nil
+}
+
+func (c *Compiler) patchJump(jump int) error {
+	offset := len(c.Code) - jump - 2 // calculate jump offset
+
+	if offset > UINT16_MAX {
+		return fmt.Errorf("Too much code to jump over.")
+	}
+
+	binary.BigEndian.PutUint16(c.Code[jump:], uint16(offset))
+	return nil
+}
+
+func (c *Compiler) identifierConstant(name string) int {
+	value := &StringObject{Value: name}
+	global := c.MakeConstant(value)
+	return global
 }
 
 func (c *Compiler) writeValue(value Object) uint16 {
@@ -188,9 +318,9 @@ func (c *Compiler) disassembleInstruction(offset int) int {
 	for _, w := range definition.OperandWidths {
 		switch w {
 		case 2:
-			fmt.Printf(" %f", c.Constants[ReadUint16(c.Code[newOffset:])])
+			fmt.Printf(" %v", ReadUint16(c.Code[newOffset:]))
 		case 1:
-			fmt.Printf(" %f", c.Constants[ReadUint8(c.Code[newOffset:])])
+			fmt.Printf(" %v", ReadUint8(c.Code[newOffset:]))
 		}
 		newOffset += w
 	}

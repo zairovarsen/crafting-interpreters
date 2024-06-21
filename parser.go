@@ -360,6 +360,8 @@ func (p *Parser) synchronize() {
 		switch p.peek().Type {
 		case CLASS, FUNCTION, VAR, FOR, IF, WHILE, RETURN:
 			return
+		default:
+			// do nothing
 		}
 
 		p.advance()

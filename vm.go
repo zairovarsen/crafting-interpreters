@@ -3,7 +3,8 @@ package main
 import "fmt"
 
 const (
-	STACK_MAX = 256
+	STACK_MAX   = 256
+	MAX_GLOBALS = 1 << 16
 )
 
 type VM struct {
@@ -12,6 +13,7 @@ type VM struct {
 	Stack        []Object
 	Ip           int
 	Sp           int
+	Globals      []Object
 }
 
 func NewVM(bytecode *ByteCode) *VM {
@@ -19,6 +21,7 @@ func NewVM(bytecode *ByteCode) *VM {
 	vm.Instructions = bytecode.Code
 	vm.Constants = bytecode.Constants
 	vm.Stack = make([]Object, STACK_MAX)
+	vm.Globals = make([]Object, MAX_GLOBALS)
 	return vm
 }
 
@@ -29,10 +32,40 @@ func (vm *VM) run() error {
 		instruction := OpCode(vm.Instructions[vm.Ip])
 		// vm.Chunk.disassembleInstruction(vm.Ip)
 		vm.Ip += 1
+		fmt.Println(definitions[instruction].Name)
+
 		switch instruction {
+		case OP_POP:
+			// vm.pop()
 		case OP_RETURN:
 			result := vm.pop()
 			fmt.Println(result.Inspect())
+			return nil
+		case OP_GET_GLOBAL:
+			index := ReadUint16(vm.Instructions[vm.Ip:])
+			vm.Ip += 2
+			value := vm.Globals[index]
+			err := vm.push(value)
+			if err != nil {
+				return err
+			}
+		case OP_GET_LOCAL:
+			index := ReadUint16(vm.Instructions[vm.Ip:])
+			vm.Ip += 2
+			value := vm.Stack[index]
+			vm.push(value)
+		case OP_SET_LOCAL:
+			index := ReadUint16(vm.Instructions[vm.Ip:])
+			vm.Ip += 2
+			vm.Stack[index] = vm.peek(0)
+		case OP_SET_GLOBAL:
+			index := ReadUint16(vm.Instructions[vm.Ip:])
+			vm.Ip += 2
+			vm.Globals[index] = vm.pop()
+		case OP_DEFINE_GLOBAL:
+			index := ReadUint16(vm.Instructions[vm.Ip:])
+			vm.Ip += 2
+			vm.Globals[index] = vm.pop()
 		case OP_CONSTANT:
 			index := ReadUint16(vm.Instructions[vm.Ip:])
 			vm.Ip += 2
@@ -102,11 +135,28 @@ func (vm *VM) run() error {
 			if err != nil {
 				return err
 			}
+		case OP_JUMP_IF_FALSE:
+			offset := ReadUint16(vm.Instructions[vm.Ip:])
+			vm.Ip += 2
+			if !vm.isTruthy(vm.peek(0)) {
+				vm.Ip += int(offset)
+			}
+		case OP_JUMP:
+			offset := ReadUint16(vm.Instructions[vm.Ip:])
+			vm.Ip += int(offset)
 		}
 
 	}
 
 	return nil
+}
+
+func (vm *VM) readString(obj Object) (string, error) {
+	if obj.Type() != StringObj {
+		return "", fmt.Errorf("cannot define a variable whose name is not a string")
+	}
+	str := obj.(*StringObject)
+	return str.Value, nil
 }
 
 func (vm *VM) equal() error {
@@ -129,6 +179,10 @@ func (vm *VM) equal() error {
 	case FloatObj:
 		leftValue := left.(*FloatObject)
 		rightValue := right.(*FloatObject)
+		result = leftValue.Value == rightValue.Value
+	case StringObj:
+		leftValue := left.(*StringObject)
+		rightValue := right.(*StringObject)
 		result = leftValue.Value == rightValue.Value
 	default:
 		result = false
@@ -174,9 +228,28 @@ func (vm *VM) executeBinary(op string) error {
 	switch {
 	case leftType == FloatObj && rightType == FloatObj:
 		return vm.executeBinaryOperation(left, op, right)
+	case leftType == StringObj && rightType == StringObj:
+		return vm.executeStringOperation(left, op, right)
 	default:
 		return fmt.Errorf("unsupported types for binary operation: %s %s", leftType, rightType)
 	}
+}
+
+func (vm *VM) executeStringOperation(left Object, op string, right Object) error {
+	leftValue := left.(*StringObject)
+	rightValue := right.(*StringObject)
+
+	var result string
+
+	switch op {
+	case "+":
+		result = leftValue.Value + rightValue.Value
+	default:
+		return fmt.Errorf("unknown operator: %s", op)
+
+	}
+
+	return vm.push(&StringObject{Value: result})
 }
 
 func (vm *VM) executeBinaryOperation(left Object, op string, right Object) error {
@@ -238,9 +311,28 @@ func (vm *VM) push(value Object) error {
 	return nil
 }
 
+func (vm *VM) peek(index int) Object {
+	return vm.Stack[vm.Sp-1-index]
+}
+
 func (vm *VM) pop() Object {
 	vm.Sp -= 1
 	return vm.Stack[vm.Sp]
+}
+
+func (vm *VM) isTruthy(value Object) bool {
+	switch v := value.(type) {
+	case *StringObject:
+		return len(v.Value) > 0
+	case *FloatObject:
+		return v.Value > 0
+	case *BooleanObject:
+		return v.Value
+	case *NilObject:
+		return false
+	default:
+		return true
+	}
 }
 
 func (vm *VM) readConstant(index int) Object {

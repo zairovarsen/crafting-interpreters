@@ -20,6 +20,15 @@ const (
 	OP_GREATER
 	OP_LESS
 	OP_NOT
+	OP_POP
+	OP_DEFINE_GLOBAL
+	OP_DEFINE_LOCAL
+	OP_SET_GLOBAL
+	OP_GET_GLOBAL
+	OP_SET_LOCAL
+	OP_GET_LOCAL
+	OP_JUMP_IF_FALSE
+	OP_JUMP
 )
 
 type Definition struct {
@@ -28,20 +37,29 @@ type Definition struct {
 }
 
 var definitions = map[OpCode]*Definition{
-	OP_CONSTANT: {"OP_CONSTANT", []int{2}},
-	OP_NEGATE:   {"OP_NEGATE", []int{}},
-	OP_RETURN:   {"OP_RETURN", []int{}},
-	OP_ADD:      {"OP_ADD", []int{}},
-	OP_SUBTRACT: {"OP_SUBTRACT", []int{}},
-	OP_MULTIPLY: {"OP_MULTIPLY", []int{}},
-	OP_DIVIDE:   {"OP_DIVIDE", []int{}},
-	OP_TRUE:     {"OP_TRUE", []int{}},
-	OP_FALSE:    {"OP_FALSE", []int{}},
-	OP_NIL:      {"OP_NIL", []int{}},
-	OP_LESS:     {"OP_LESS", []int{}},
-	OP_GREATER:  {"OP_GREATER", []int{}},
-	OP_EQUAL:    {"OP_EQUAL", []int{}},
-	OP_NOT:      {"OP_NOT", []int{}},
+	OP_CONSTANT:      {"OP_CONSTANT", []int{2}},
+	OP_NEGATE:        {"OP_NEGATE", []int{}},
+	OP_RETURN:        {"OP_RETURN", []int{}},
+	OP_ADD:           {"OP_ADD", []int{}},
+	OP_SUBTRACT:      {"OP_SUBTRACT", []int{}},
+	OP_MULTIPLY:      {"OP_MULTIPLY", []int{}},
+	OP_DIVIDE:        {"OP_DIVIDE", []int{}},
+	OP_TRUE:          {"OP_TRUE", []int{}},
+	OP_FALSE:         {"OP_FALSE", []int{}},
+	OP_NIL:           {"OP_NIL", []int{}},
+	OP_LESS:          {"OP_LESS", []int{}},
+	OP_GREATER:       {"OP_GREATER", []int{}},
+	OP_EQUAL:         {"OP_EQUAL", []int{}},
+	OP_NOT:           {"OP_NOT", []int{}},
+	OP_POP:           {"OP_POP", []int{}},
+	OP_DEFINE_GLOBAL: {"OP_DEFINE_GLOBAL", []int{2}},
+	OP_DEFINE_LOCAL:  {"OP_DEFINE_LOCAL", []int{2}},
+	OP_GET_GLOBAL:    {"OP_GET_GLOBAL", []int{2}},
+	OP_SET_GLOBAL:    {"OP_SET_GLOBAL", []int{2}},
+	OP_GET_LOCAL:     {"OP_GET_LOCAL", []int{2}},
+	OP_SET_LOCAL:     {"OP_SET_LOCAL", []int{2}},
+	OP_JUMP_IF_FALSE: {"OP_JUMP_IF_FALSE", []int{2}},
+	OP_JUMP:          {"OP_JUMP", []int{2}},
 }
 
 func Lookup(opcode byte) (*Definition, error) {
