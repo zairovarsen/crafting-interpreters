@@ -31,16 +31,28 @@ func (vm *VM) run() error {
 	for vm.Ip != instrLen {
 		instruction := OpCode(vm.Instructions[vm.Ip])
 		// vm.Chunk.disassembleInstruction(vm.Ip)
+
+		definition := definitions[instruction]
+		fmt.Printf("Instruction: %s, Sp: %d, Ip: %d\n", definition.Name, vm.Sp, vm.Ip)
 		vm.Ip += 1
-		fmt.Println(definitions[instruction].Name)
 
 		switch instruction {
 		case OP_POP:
-			// vm.pop()
+			value := vm.pop()
+			fmt.Printf("Popped: %v at index %d\n", value, vm.Sp)
 		case OP_RETURN:
 			result := vm.pop()
 			fmt.Println(result.Inspect())
 			return nil
+		case OP_GET_BUILTIN:
+			builinIndex := ReadUint8(vm.Instructions[vm.Ip:])
+
+			definition := Builtins[builinIndex]
+
+			err := vm.push(definition.Builtin)
+			if err != nil {
+				return nil
+			}
 		case OP_GET_GLOBAL:
 			index := ReadUint16(vm.Instructions[vm.Ip:])
 			vm.Ip += 2
@@ -50,14 +62,17 @@ func (vm *VM) run() error {
 				return err
 			}
 		case OP_GET_LOCAL:
-			index := ReadUint16(vm.Instructions[vm.Ip:])
-			vm.Ip += 2
-			value := vm.Stack[index]
-			vm.push(value)
+			index := ReadUint8(vm.Instructions[vm.Ip:])
+			vm.Ip += 1
+			fmt.Printf("Pushing %v, index %d\n", vm.Stack[index], index)
+			err := vm.push(vm.Stack[index])
+			if err != nil {
+				return err
+			}
 		case OP_SET_LOCAL:
-			index := ReadUint16(vm.Instructions[vm.Ip:])
-			vm.Ip += 2
-			vm.Stack[index] = vm.peek(0)
+			index := ReadUint8(vm.Instructions[vm.Ip:])
+			vm.Ip += 1
+			vm.Stack[index] = vm.pop()
 		case OP_SET_GLOBAL:
 			index := ReadUint16(vm.Instructions[vm.Ip:])
 			vm.Ip += 2
@@ -66,10 +81,16 @@ func (vm *VM) run() error {
 			index := ReadUint16(vm.Instructions[vm.Ip:])
 			vm.Ip += 2
 			vm.Globals[index] = vm.pop()
+		case OP_DEFINE_LOCAL:
+			index := ReadUint8(vm.Instructions[vm.Ip:])
+			vm.Ip += 1
+			vm.Stack[index] = vm.pop()
+			fmt.Printf("Defining %v at local index %d\n", vm.Stack[index], index)
 		case OP_CONSTANT:
 			index := ReadUint16(vm.Instructions[vm.Ip:])
 			vm.Ip += 2
 			constant := vm.readConstant(int(index))
+			fmt.Printf("Read constant: %v, pushing it \n", constant)
 
 			err := vm.push(constant)
 			if err != nil {
@@ -139,11 +160,18 @@ func (vm *VM) run() error {
 			offset := ReadUint16(vm.Instructions[vm.Ip:])
 			vm.Ip += 2
 			if !vm.isTruthy(vm.peek(0)) {
+				fmt.Printf("Jumping by offset %d because top of stack is falsey\n", offset)
 				vm.Ip += int(offset)
+				vm.pop()
 			}
 		case OP_JUMP:
 			offset := ReadUint16(vm.Instructions[vm.Ip:])
+			fmt.Printf("Unconditional jump by offset %d\n", offset)
 			vm.Ip += int(offset)
+		case OP_LOOP:
+			offset := ReadUint16(vm.Instructions[vm.Ip:])
+			fmt.Printf("Looping back by offset %d\n", offset)
+			vm.Ip -= int(offset)
 		}
 
 	}
@@ -318,6 +346,14 @@ func (vm *VM) peek(index int) Object {
 func (vm *VM) pop() Object {
 	vm.Sp -= 1
 	return vm.Stack[vm.Sp]
+}
+
+func (c *Compiler) lastInstructionIsPop() bool {
+	return c.Code[len(c.Code)-1] == byte(OP_POP)
+}
+
+func (c *Compiler) removeLastPop() {
+	c.Code = c.Code[:len(c.Code)-1]
 }
 
 func (vm *VM) isTruthy(value Object) bool {

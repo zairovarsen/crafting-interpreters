@@ -151,6 +151,90 @@ func (c *Compiler) Compile(ast Node) error {
 		} else {
 			c.WriteChunk(OP_DEFINE_LOCAL, node.Token.Line, symbol.Index)
 		}
+	case *While:
+		loopStart := len(c.Code) + 1
+
+		if err := c.Compile(node.Condition); err != nil {
+			return err
+		}
+
+		c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
+		exitJump := len(c.Code) - 2 // offset of the emitted instruction
+
+		if c.lastInstruction() != byte(OP_POP) {
+			c.WriteChunk(OP_POP, node.Token.Line)
+		}
+
+		if err := c.Compile(node.Body); err != nil {
+			return err
+		}
+
+		offset := len(c.Code) - loopStart + 2
+		c.WriteChunk(OP_LOOP, node.Token.Line, offset)
+
+		c.patchJump(exitJump)
+		if c.lastInstruction() != byte(OP_POP) {
+			c.WriteChunk(OP_POP, node.Token.Line)
+		}
+	case *For:
+		c.enterScope()
+
+		if node.Initializer != nil {
+			if err := c.Compile(node.Initializer); err != nil {
+				return err
+			}
+
+			if c.lastInstructionIsPop() {
+				c.removeLastPop()
+			}
+		}
+
+		conditionalStart := len(c.Code)
+
+		exitJump := -1
+		if node.Condition != nil {
+			if err := c.Compile(node.Condition); err != nil {
+				return err
+			}
+
+			if c.lastInstructionIsPop() {
+				c.removeLastPop()
+			}
+
+			c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
+			exitJump = len(c.Code) - 2
+
+			c.WriteByte(byte(OP_POP))
+		}
+
+		if err := c.Compile(node.Body); err != nil {
+			return err
+		}
+
+		if node.Increment != nil {
+			if err := c.Compile(node.Increment); err != nil {
+				return err
+			}
+
+			if c.lastInstructionIsPop() {
+				c.removeLastPop()
+			}
+		}
+
+		offset := len(c.Code) - conditionalStart + 2
+		c.WriteChunk(OP_LOOP, node.Token.Line, offset)
+
+		if exitJump != -1 {
+			if err := c.patchJump(exitJump); err != nil {
+				return err
+			}
+
+			if c.lastInstructionIsPop() {
+				c.removeLastPop()
+			}
+		}
+
+		c.leaveScope()
 	case *Assignment:
 		if symbol, ok := c.SymbolTable.Resolve(node.Identifier.Value); !ok {
 			return fmt.Errorf("Undeclared identifier: %s", node.Identifier.Value)
@@ -180,6 +264,8 @@ func (c *Compiler) Compile(ast Node) error {
 			c.WriteChunk(OP_GET_GLOBAL, node.Token.Line, symbol.Index)
 		case LOCAL_SCOPE:
 			c.WriteChunk(OP_GET_LOCAL, node.Token.Line, symbol.Index)
+		case BUILTIN_SCOPE:
+			c.WriteChunk(OP_GET_BUILTIN, node.Token.Line, symbol.Index)
 		}
 	case *StringLiteral:
 		value := &StringObject{Value: node.Value}
@@ -248,6 +334,21 @@ func (c *Compiler) Compile(ast Node) error {
 			c.WriteChunk(OP_GREATER, node.Token.Line)
 			c.WriteChunk(OP_NOT, node.Token.Line)
 		}
+	case *Logical:
+		switch node.Operator {
+		case "and":
+			err := c.and(node)
+			if err != nil {
+				return err
+			}
+		case "or":
+			err := c.or(node)
+			if err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("Invalid logical operator: %s", node.Operator)
+		}
 	case *IfStatement:
 		condition := c.Compile(node.Condition)
 		if condition != nil {
@@ -256,31 +357,106 @@ func (c *Compiler) Compile(ast Node) error {
 
 		c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
 		thenJump := len(c.Code) - 2 // offset of the emitted instruction
-		c.WriteChunk(OP_POP, node.Token.Line)
+
+		// in case not expression statement remove condition
+		if c.lastInstruction() != byte(OP_POP) {
+			c.WriteChunk(OP_POP, node.Token.Line)
+		}
 
 		err := c.Compile(node.ThenBranch)
 		if err != nil {
 			return err
 		}
 
+		// Emit OP_JUMP with a placeholder offset
+		c.WriteChunk(OP_JUMP, node.Token.Line, 9999)
+		elseJump := len(c.Code) - 2 // offset of the emitted instruction for else
+
 		err = c.patchJump(thenJump)
 		if err != nil {
 			return err
 		}
-		c.WriteChunk(OP_POP, node.Token.Line)
+		if c.lastInstruction() != byte(OP_POP) {
+			c.WriteChunk(OP_POP, node.Token.Line)
+		}
 
-		c.WriteChunk(OP_JUMP, node.Token.Line, 9999)
-		elseJump := len(c.Code) - 2
+		if node.ElseBranch != nil {
+			err = c.Compile(node.ElseBranch)
+			if err != nil {
+				return err
+			}
 
-		err = c.Compile(node.ElseBranch)
+		} else {
+			c.WriteChunk(OP_NIL, node.Token.Line)
+		}
+
+		err = c.patchJump(elseJump)
 		if err != nil {
 			return err
 		}
 
-		c.patchJump(elseJump)
 	}
 
 	return nil
+}
+
+func (c *Compiler) or(node *Logical) error {
+	if err := c.Compile(node.Left); err != nil {
+		return err
+	}
+
+	// when falsey does a tiny jump over the unconditional jump over the code for right operand
+	c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
+	elseJump := len(c.Code) - 2
+
+	c.WriteChunk(OP_JUMP, node.Token.Line, 9999)
+	endJump := len(c.Code) - 2
+
+	if err := c.patchJump(elseJump); err != nil {
+		return err
+	}
+	if c.lastInstruction() != byte(OP_POP) {
+		c.WriteChunk(OP_POP, node.Token.Line)
+	}
+
+	if err := c.Compile(node.Right); err != nil {
+		return err
+	}
+
+	if err := c.patchJump(endJump); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Compiler) and(node *Logical) error {
+	left := c.Compile(node.Left)
+	if left != nil {
+		return left
+	}
+
+	c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
+	endJump := len(c.Code) - 2
+
+	if c.lastInstruction() != byte(OP_POP) {
+		c.WriteChunk(OP_POP, node.Token.Line)
+	}
+
+	right := c.Compile(node.Right)
+	if right != nil {
+		return right
+	}
+
+	err := c.patchJump(endJump)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Compiler) lastInstruction() byte {
+	return c.Code[len(c.Code)-1]
 }
 
 func (c *Compiler) patchJump(jump int) error {
@@ -288,6 +464,10 @@ func (c *Compiler) patchJump(jump int) error {
 
 	if offset > UINT16_MAX {
 		return fmt.Errorf("Too much code to jump over.")
+	}
+
+	if jump < 0 || jump >= len(c.Code) {
+		return fmt.Errorf("Invalid jump index: %d", jump)
 	}
 
 	binary.BigEndian.PutUint16(c.Code[jump:], uint16(offset))
@@ -298,6 +478,15 @@ func (c *Compiler) identifierConstant(name string) int {
 	value := &StringObject{Value: name}
 	global := c.MakeConstant(value)
 	return global
+}
+
+func (c *Compiler) enterScope() {
+	newSymbolTable := NewEnclosedSymbolTable(c.SymbolTable)
+	c.SymbolTable = newSymbolTable
+}
+
+func (c *Compiler) leaveScope() {
+	c.SymbolTable = c.SymbolTable.Outer
 }
 
 func (c *Compiler) writeValue(value Object) uint16 {

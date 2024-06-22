@@ -24,11 +24,13 @@ const (
 	OP_DEFINE_GLOBAL
 	OP_DEFINE_LOCAL
 	OP_SET_GLOBAL
-	OP_GET_GLOBAL
 	OP_SET_LOCAL
+	OP_GET_BUILTIN
+	OP_GET_GLOBAL
 	OP_GET_LOCAL
 	OP_JUMP_IF_FALSE
 	OP_JUMP
+	OP_LOOP
 )
 
 type Definition struct {
@@ -53,13 +55,15 @@ var definitions = map[OpCode]*Definition{
 	OP_NOT:           {"OP_NOT", []int{}},
 	OP_POP:           {"OP_POP", []int{}},
 	OP_DEFINE_GLOBAL: {"OP_DEFINE_GLOBAL", []int{2}},
-	OP_DEFINE_LOCAL:  {"OP_DEFINE_LOCAL", []int{2}},
+	OP_DEFINE_LOCAL:  {"OP_DEFINE_LOCAL", []int{1}},
 	OP_GET_GLOBAL:    {"OP_GET_GLOBAL", []int{2}},
+	OP_GET_LOCAL:     {"OP_GET_LOCAL", []int{1}},
+	OP_GET_BUILTIN:   {"OP_GET_BUILTIN", []int{1}},
 	OP_SET_GLOBAL:    {"OP_SET_GLOBAL", []int{2}},
-	OP_GET_LOCAL:     {"OP_GET_LOCAL", []int{2}},
-	OP_SET_LOCAL:     {"OP_SET_LOCAL", []int{2}},
+	OP_SET_LOCAL:     {"OP_SET_LOCAL", []int{1}},
 	OP_JUMP_IF_FALSE: {"OP_JUMP_IF_FALSE", []int{2}},
 	OP_JUMP:          {"OP_JUMP", []int{2}},
+	OP_LOOP:          {"OP_LOOP", []int{2}},
 }
 
 func Lookup(opcode byte) (*Definition, error) {

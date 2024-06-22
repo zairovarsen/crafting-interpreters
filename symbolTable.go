@@ -24,8 +24,7 @@ func NewSymbolTable() *SymbolTable {
 	return &SymbolTable{store: s}
 }
 
-func NewEnclosedSymbolTable() *SymbolTable {
-	outer := NewSymbolTable()
+func NewEnclosedSymbolTable(outer *SymbolTable) *SymbolTable {
 	s := make(map[string]Symbol)
 	return &SymbolTable{Outer: outer, store: s}
 }
