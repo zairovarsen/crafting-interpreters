@@ -1,9 +1,13 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
-	STACK_MAX   = 256
+	// 256
+	STACK_MAX   = 10
 	MAX_GLOBALS = 1 << 16
 )
 
@@ -33,16 +37,15 @@ func (vm *VM) run() error {
 		// vm.Chunk.disassembleInstruction(vm.Ip)
 
 		definition := definitions[instruction]
-		fmt.Printf("Instruction: %s, Sp: %d, Ip: %d\n", definition.Name, vm.Sp, vm.Ip)
+		fmt.Printf("Instruction: %s, Sp: %d, Ip: %d, Stack before: %v\n", definition.Name, vm.Sp, vm.Ip, vm.printStack())
 		vm.Ip += 1
 
 		switch instruction {
 		case OP_POP:
-			value := vm.pop()
-			fmt.Printf("Popped: %v at index %d\n", value, vm.Sp)
+			vm.pop()
 		case OP_RETURN:
-			result := vm.pop()
-			fmt.Println(result.Inspect())
+			// result := vm.pop()
+			// fmt.Println(result.Inspect())
 			return nil
 		case OP_GET_BUILTIN:
 			builinIndex := ReadUint8(vm.Instructions[vm.Ip:])
@@ -64,7 +67,6 @@ func (vm *VM) run() error {
 		case OP_GET_LOCAL:
 			index := ReadUint8(vm.Instructions[vm.Ip:])
 			vm.Ip += 1
-			fmt.Printf("Pushing %v, index %d\n", vm.Stack[index], index)
 			err := vm.push(vm.Stack[index])
 			if err != nil {
 				return err
@@ -72,7 +74,8 @@ func (vm *VM) run() error {
 		case OP_SET_LOCAL:
 			index := ReadUint8(vm.Instructions[vm.Ip:])
 			vm.Ip += 1
-			vm.Stack[index] = vm.pop()
+			value := vm.pop()
+			vm.Stack[index] = value
 		case OP_SET_GLOBAL:
 			index := ReadUint16(vm.Instructions[vm.Ip:])
 			vm.Ip += 2
@@ -84,13 +87,11 @@ func (vm *VM) run() error {
 		case OP_DEFINE_LOCAL:
 			index := ReadUint8(vm.Instructions[vm.Ip:])
 			vm.Ip += 1
-			vm.Stack[index] = vm.pop()
-			fmt.Printf("Defining %v at local index %d\n", vm.Stack[index], index)
+			vm.Stack[index] = vm.peek(0)
 		case OP_CONSTANT:
 			index := ReadUint16(vm.Instructions[vm.Ip:])
 			vm.Ip += 2
 			constant := vm.readConstant(int(index))
-			fmt.Printf("Read constant: %v, pushing it \n", constant)
 
 			err := vm.push(constant)
 			if err != nil {
@@ -171,9 +172,11 @@ func (vm *VM) run() error {
 		case OP_LOOP:
 			offset := ReadUint16(vm.Instructions[vm.Ip:])
 			fmt.Printf("Looping back by offset %d\n", offset)
+			vm.Ip += 1
 			vm.Ip -= int(offset)
 		}
 
+		fmt.Printf("Stack after: %v\n", vm.printStack())
 	}
 
 	return nil
@@ -348,12 +351,22 @@ func (vm *VM) pop() Object {
 	return vm.Stack[vm.Sp]
 }
 
-func (c *Compiler) lastInstructionIsPop() bool {
-	return c.Code[len(c.Code)-1] == byte(OP_POP)
-}
+func (vm *VM) printStack() string {
+	var str strings.Builder
 
-func (c *Compiler) removeLastPop() {
-	c.Code = c.Code[:len(c.Code)-1]
+	str.WriteString("[")
+
+	for i := 0; i < vm.Sp; i++ {
+		obj := vm.Stack[i]
+		if obj != nil {
+			str.WriteString(obj.Inspect() + ", ")
+			continue
+		}
+		break
+	}
+
+	str.WriteString("]")
+	return str.String()
 }
 
 func (vm *VM) isTruthy(value Object) bool {

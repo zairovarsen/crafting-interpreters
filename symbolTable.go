@@ -25,8 +25,9 @@ func NewSymbolTable() *SymbolTable {
 }
 
 func NewEnclosedSymbolTable(outer *SymbolTable) *SymbolTable {
-	s := make(map[string]Symbol)
-	return &SymbolTable{Outer: outer, store: s}
+	s := NewSymbolTable()
+	s.Outer = outer
+	return s
 }
 
 func (s *SymbolTable) DefineBuiltin(name string) Symbol {
@@ -57,7 +58,7 @@ func (s *SymbolTable) ResolveInner(name string) (Symbol, bool) {
 func (s *SymbolTable) Resolve(name string) (Symbol, bool) {
 	obj, ok := s.store[name]
 	if !ok && s.Outer != nil {
-		obj, ok := s.Outer.Resolve(name)
+		obj, ok = s.Outer.Resolve(name)
 		if !ok {
 			return obj, ok
 		}

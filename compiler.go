@@ -122,7 +122,10 @@ func (c *Compiler) Compile(ast Node) error {
 		if err != nil {
 			return err
 		}
-		// c.WriteChunk(OP_POP, node.Token.Line)
+
+		if _, ok := node.Expression.(*Assignment); !ok {
+			c.WriteChunk(OP_POP, node.Token.Line)
+		}
 	case *BlockStatement:
 		for _, s := range node.Statements {
 			err := c.Compile(s)
@@ -152,7 +155,7 @@ func (c *Compiler) Compile(ast Node) error {
 			c.WriteChunk(OP_DEFINE_LOCAL, node.Token.Line, symbol.Index)
 		}
 	case *While:
-		loopStart := len(c.Code) + 1
+		loopStart := len(c.Code)
 
 		if err := c.Compile(node.Condition); err != nil {
 			return err
@@ -160,22 +163,30 @@ func (c *Compiler) Compile(ast Node) error {
 
 		c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
 		exitJump := len(c.Code) - 2 // offset of the emitted instruction
+		c.WriteByte(byte(OP_POP))
 
-		if c.lastInstruction() != byte(OP_POP) {
-			c.WriteChunk(OP_POP, node.Token.Line)
-		}
+		if len(node.Body.Statements) != 0 {
+			if err := c.Compile(node.Body); err != nil {
+				return err
+			}
 
-		if err := c.Compile(node.Body); err != nil {
-			return err
+			if c.lastInstructionIsPop() {
+				c.removeLastPop()
+			}
+		} else {
+			c.WriteChunk(OP_NIL, node.Token.Line)
+			c.WriteByte(byte(OP_POP))
 		}
 
 		offset := len(c.Code) - loopStart + 2
 		c.WriteChunk(OP_LOOP, node.Token.Line, offset)
 
-		c.patchJump(exitJump)
-		if c.lastInstruction() != byte(OP_POP) {
-			c.WriteChunk(OP_POP, node.Token.Line)
+		if err := c.patchJump(exitJump); err != nil {
+			return err
 		}
+
+		c.WriteByte(byte(OP_POP))
+
 	case *For:
 		c.enterScope()
 
@@ -203,7 +214,6 @@ func (c *Compiler) Compile(ast Node) error {
 
 			c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
 			exitJump = len(c.Code) - 2
-
 			c.WriteByte(byte(OP_POP))
 		}
 
@@ -228,10 +238,7 @@ func (c *Compiler) Compile(ast Node) error {
 			if err := c.patchJump(exitJump); err != nil {
 				return err
 			}
-
-			if c.lastInstructionIsPop() {
-				c.removeLastPop()
-			}
+			c.WriteByte(byte(OP_POP))
 		}
 
 		c.leaveScope()
@@ -516,4 +523,12 @@ func (c *Compiler) disassembleInstruction(offset int) int {
 	fmt.Printf("\n")
 
 	return newOffset
+}
+
+func (c *Compiler) lastInstructionIsPop() bool {
+	return c.Code[len(c.Code)-1] == byte(OP_POP)
+}
+
+func (c *Compiler) removeLastPop() {
+	c.Code = c.Code[:len(c.Code)-1]
 }
