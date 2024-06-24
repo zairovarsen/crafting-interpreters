@@ -42,6 +42,17 @@ type Object interface {
 	Inspect() string
 }
 
+type CompiledFunction struct {
+	Instructions  Instructions
+	NumLocals     int
+	NumParameters int
+}
+
+func (cf *CompiledFunction) Type() ObjectType { return CompiledFunctionObj }
+func (cf *CompiledFunction) Inspect() string {
+	return fmt.Sprintf("CompiledFunction[%p]", cf)
+}
+
 type ContinueSignal struct{}
 
 func (b *ContinueSignal) Type() ObjectType { return ContinueObj }

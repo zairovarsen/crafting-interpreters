@@ -31,6 +31,8 @@ const (
 	OP_JUMP_IF_FALSE
 	OP_JUMP
 	OP_LOOP
+	OP_CALL
+	OP_FUNCTION
 )
 
 type Definition struct {
@@ -64,6 +66,8 @@ var definitions = map[OpCode]*Definition{
 	OP_JUMP_IF_FALSE: {"OP_JUMP_IF_FALSE", []int{2}},
 	OP_JUMP:          {"OP_JUMP", []int{2}},
 	OP_LOOP:          {"OP_LOOP", []int{2}},
+	OP_CALL:          {"OP_CALL", []int{1}},
+	OP_FUNCTION:      {"OP_FUNCTION", []int{2}},
 }
 
 func Lookup(opcode byte) (*Definition, error) {

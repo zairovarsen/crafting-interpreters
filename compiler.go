@@ -15,10 +15,15 @@ type LineInfo struct {
 }
 
 type Compiler struct {
-	Code        Instructions
 	Constants   []Object
 	LineInfo    []LineInfo
 	SymbolTable *SymbolTable
+	Scopes      []Scope
+	ScopeIndex  int
+}
+
+type Scope struct {
+	Instructions Instructions
 }
 
 type ByteCode struct {
@@ -28,12 +33,15 @@ type ByteCode struct {
 
 func (c *Compiler) ByteCode() *ByteCode {
 	return &ByteCode{
-		Code:      c.Code,
+		Code:      c.currentInstructions(),
 		Constants: c.Constants,
 	}
 }
 
 func NewCompiler() *Compiler {
+	mainScope := Scope{
+		Instructions: Instructions{},
+	}
 
 	symbolTable := NewSymbolTable()
 
@@ -41,69 +49,11 @@ func NewCompiler() *Compiler {
 		symbolTable.DefineBuiltin(name)
 	}
 
-	return &Compiler{Code: make([]byte, 0), Constants: make([]Object, 0), LineInfo: make([]LineInfo, 0), SymbolTable: symbolTable}
+	return &Compiler{Constants: make([]Object, 0), LineInfo: make([]LineInfo, 0), SymbolTable: symbolTable, Scopes: []Scope{mainScope}, ScopeIndex: 0}
 }
 
 func NewCompilerWithState(symbolTable *SymbolTable) *Compiler {
-	return &Compiler{Code: make([]byte, 0), Constants: make([]Object, 0), LineInfo: make([]LineInfo, 0), SymbolTable: symbolTable}
-}
-
-func ReadUint16(ins Instructions) uint16 {
-	return binary.BigEndian.Uint16(ins)
-}
-
-func ReadUint8(ins Instructions) uint8 {
-	return uint8(ins[0])
-}
-
-func (c *Compiler) MakeConstant(value Object) int {
-	return int(c.writeValue(value))
-}
-
-func (c *Compiler) DisassembleChunks() {
-	var offset int
-
-	fmt.Println(len(c.Code))
-	for offset < len(c.Code) {
-		offset = c.disassembleInstruction(offset)
-	}
-}
-
-func (c *Compiler) WriteByte(b byte) {
-	c.Code = append(c.Code, b)
-}
-
-func (c *Compiler) WriteChunk(opcode OpCode, line int, operands ...int) {
-	if len(c.LineInfo) > 0 && c.LineInfo[len(c.LineInfo)-1].Line == line {
-		c.LineInfo[len(c.LineInfo)-1].Count++
-	} else {
-		c.LineInfo = append(c.LineInfo, LineInfo{Line: line, Count: 1})
-	}
-	c.Code = append(c.Code, byte(opcode))
-	definition := definitions[opcode]
-
-	for i, o := range operands {
-		operandWidth := definition.OperandWidths[i]
-		switch operandWidth {
-		case 2:
-			c.Code = binary.BigEndian.AppendUint16(c.Code, uint16(o))
-		case 1:
-			c.Code = append(c.Code, byte(o))
-		}
-	}
-}
-
-func (c *Compiler) GetLine(insIndex int) int {
-	accumulatedCount := 0
-
-	for _, info := range c.LineInfo {
-		accumulatedCount += info.Count
-		if insIndex < accumulatedCount {
-			return info.Line
-		}
-	}
-
-	return -1 // In case of an invalid instruction index
+	return &Compiler{Constants: make([]Object, 0), LineInfo: make([]LineInfo, 0), SymbolTable: symbolTable}
 }
 
 func (c *Compiler) Compile(ast Node) error {
@@ -116,7 +66,6 @@ func (c *Compiler) Compile(ast Node) error {
 				return err
 			}
 		}
-		c.WriteChunk(OP_RETURN, c.LineInfo[len(c.LineInfo)-1].Line)
 	case *ExpressionStatement:
 		err := c.Compile(node.Expression)
 		if err != nil {
@@ -132,6 +81,68 @@ func (c *Compiler) Compile(ast Node) error {
 			if err != nil {
 				return err
 			}
+		}
+	case *ReturnStatement:
+		if err := c.Compile(node.ReturnValue); err != nil {
+			return err
+		}
+
+		c.WriteChunk(OP_RETURN, node.Token.Line)
+	case *CallExpression:
+		if err := c.Compile(node.Callee); err != nil {
+			return err
+		}
+
+		argCount := len(node.Arguments)
+
+		if argCount >= 255 {
+			return fmt.Errorf("Can't have more than 255 arguments.")
+		}
+
+		for _, arg := range node.Arguments {
+			if err := c.Compile(arg); err != nil {
+				return err
+			}
+		}
+
+		c.WriteChunk(OP_CALL, node.Token.Line, argCount)
+	case *FunctionDeclaration:
+		symbol := c.SymbolTable.Define(node.Name.Value)
+		c.enterScope()
+
+		for _, p := range node.Params {
+			c.SymbolTable.Define(p.Value)
+		}
+
+		if err := c.Compile(node.Body); err != nil {
+			return err
+		}
+
+		if c.lastInstructionIsPop() {
+			c.removeLastPop()
+		}
+
+		if !c.lastInstructionIsReturn() {
+			c.WriteChunk(OP_NIL, node.Token.Line) // Ensure OP_NIL before OP_RETURN if no explicit return
+			c.WriteChunk(OP_RETURN, node.Token.Line)
+		}
+
+		numLocals := c.SymbolTable.numDefinitions - len(node.Params)
+		instructions := c.leaveScope()
+
+		compiledFunction := &CompiledFunction{
+			Instructions:  instructions,
+			NumLocals:     numLocals,
+			NumParameters: len(node.Params),
+		}
+
+		fnIndex := c.MakeConstant(compiledFunction)
+		c.WriteChunk(OP_FUNCTION, node.Token.Line, fnIndex)
+
+		if c.ScopeIndex == 0 {
+			c.WriteChunk(OP_DEFINE_GLOBAL, node.Token.Line, symbol.Index)
+		} else {
+			c.WriteChunk(OP_DEFINE_LOCAL, node.Token.Line, symbol.Index)
 		}
 	case *VarStatement:
 		_, ok := c.SymbolTable.ResolveInner(node.Identifier.Value)
@@ -155,14 +166,14 @@ func (c *Compiler) Compile(ast Node) error {
 			c.WriteChunk(OP_DEFINE_LOCAL, node.Token.Line, symbol.Index)
 		}
 	case *While:
-		loopStart := len(c.Code)
+		loopStart := len(c.currentInstructions())
 
 		if err := c.Compile(node.Condition); err != nil {
 			return err
 		}
 
 		c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
-		exitJump := len(c.Code) - 2 // offset of the emitted instruction
+		exitJump := len(c.currentInstructions()) - 2 // offset of the emitted instruction
 		c.WriteByte(byte(OP_POP))
 
 		if len(node.Body.Statements) != 0 {
@@ -178,7 +189,7 @@ func (c *Compiler) Compile(ast Node) error {
 			c.WriteByte(byte(OP_POP))
 		}
 
-		offset := len(c.Code) - loopStart + 2
+		offset := len(c.currentInstructions()) - loopStart + 2
 		c.WriteChunk(OP_LOOP, node.Token.Line, offset)
 
 		if err := c.patchJump(exitJump); err != nil {
@@ -200,7 +211,7 @@ func (c *Compiler) Compile(ast Node) error {
 			}
 		}
 
-		conditionalStart := len(c.Code)
+		conditionalStart := len(c.currentInstructions())
 
 		exitJump := -1
 		if node.Condition != nil {
@@ -213,7 +224,7 @@ func (c *Compiler) Compile(ast Node) error {
 			}
 
 			c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
-			exitJump = len(c.Code) - 2
+			exitJump = len(c.currentInstructions()) - 2
 			c.WriteByte(byte(OP_POP))
 		}
 
@@ -231,7 +242,7 @@ func (c *Compiler) Compile(ast Node) error {
 			}
 		}
 
-		offset := len(c.Code) - conditionalStart + 2
+		offset := len(c.currentInstructions()) - conditionalStart + 2
 		c.WriteChunk(OP_LOOP, node.Token.Line, offset)
 
 		if exitJump != -1 {
@@ -363,7 +374,7 @@ func (c *Compiler) Compile(ast Node) error {
 		}
 
 		c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
-		thenJump := len(c.Code) - 2 // offset of the emitted instruction
+		thenJump := len(c.currentInstructions()) - 2 // offset of the emitted instruction
 
 		// in case not expression statement remove condition
 		if c.lastInstruction() != byte(OP_POP) {
@@ -377,7 +388,7 @@ func (c *Compiler) Compile(ast Node) error {
 
 		// Emit OP_JUMP with a placeholder offset
 		c.WriteChunk(OP_JUMP, node.Token.Line, 9999)
-		elseJump := len(c.Code) - 2 // offset of the emitted instruction for else
+		elseJump := len(c.currentInstructions()) - 2 // offset of the emitted instruction for else
 
 		err = c.patchJump(thenJump)
 		if err != nil {
@@ -414,10 +425,10 @@ func (c *Compiler) or(node *Logical) error {
 
 	// when falsey does a tiny jump over the unconditional jump over the code for right operand
 	c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
-	elseJump := len(c.Code) - 2
+	elseJump := len(c.currentInstructions()) - 2
 
 	c.WriteChunk(OP_JUMP, node.Token.Line, 9999)
-	endJump := len(c.Code) - 2
+	endJump := len(c.currentInstructions()) - 2
 
 	if err := c.patchJump(elseJump); err != nil {
 		return err
@@ -444,7 +455,7 @@ func (c *Compiler) and(node *Logical) error {
 	}
 
 	c.WriteChunk(OP_JUMP_IF_FALSE, node.Token.Line, 9999)
-	endJump := len(c.Code) - 2
+	endJump := len(c.currentInstructions()) - 2
 
 	if c.lastInstruction() != byte(OP_POP) {
 		c.WriteChunk(OP_POP, node.Token.Line)
@@ -460,24 +471,77 @@ func (c *Compiler) and(node *Logical) error {
 		return err
 	}
 	return nil
+
+}
+
+func (c *Compiler) MakeConstant(value Object) int {
+	return int(c.writeValue(value))
+}
+
+func (c *Compiler) DisassembleChunks() {
+	var offset int
+
+	length := len(c.currentInstructions())
+
+	for offset < length {
+		offset = c.disassembleInstruction(offset)
+	}
+}
+
+func (c *Compiler) WriteByte(b byte) {
+	c.Scopes[c.ScopeIndex].Instructions = append(c.Scopes[c.ScopeIndex].Instructions, b)
+}
+
+func (c *Compiler) WriteChunk(opcode OpCode, line int, operands ...int) {
+	if len(c.LineInfo) > 0 && c.LineInfo[len(c.LineInfo)-1].Line == line {
+		c.LineInfo[len(c.LineInfo)-1].Count++
+	} else {
+		c.LineInfo = append(c.LineInfo, LineInfo{Line: line, Count: 1})
+	}
+	c.Scopes[c.ScopeIndex].Instructions = append(c.Scopes[c.ScopeIndex].Instructions, byte(opcode))
+	definition := definitions[opcode]
+
+	for i, o := range operands {
+		operandWidth := definition.OperandWidths[i]
+		switch operandWidth {
+		case 2:
+			c.Scopes[c.ScopeIndex].Instructions = binary.BigEndian.AppendUint16(c.Scopes[c.ScopeIndex].Instructions, uint16(o))
+		case 1:
+			c.Scopes[c.ScopeIndex].Instructions = append(c.Scopes[c.ScopeIndex].Instructions, byte(o))
+		}
+	}
+}
+
+func (c *Compiler) GetLine(insIndex int) int {
+	accumulatedCount := 0
+
+	for _, info := range c.LineInfo {
+		accumulatedCount += info.Count
+		if insIndex < accumulatedCount {
+			return info.Line
+		}
+	}
+
+	return -1 // In case of an invalid instruction index
 }
 
 func (c *Compiler) lastInstruction() byte {
-	return c.Code[len(c.Code)-1]
+	instructions := c.currentInstructions()
+	return instructions[len(instructions)-1]
 }
 
 func (c *Compiler) patchJump(jump int) error {
-	offset := len(c.Code) - jump - 2 // calculate jump offset
+	offset := len(c.currentInstructions()) - jump - 2 // calculate jump offset
 
 	if offset > UINT16_MAX {
 		return fmt.Errorf("Too much code to jump over.")
 	}
 
-	if jump < 0 || jump >= len(c.Code) {
+	if jump < 0 || jump >= len(c.currentInstructions()) {
 		return fmt.Errorf("Invalid jump index: %d", jump)
 	}
 
-	binary.BigEndian.PutUint16(c.Code[jump:], uint16(offset))
+	binary.BigEndian.PutUint16(c.Scopes[c.ScopeIndex].Instructions[jump:], uint16(offset))
 	return nil
 }
 
@@ -487,13 +551,27 @@ func (c *Compiler) identifierConstant(name string) int {
 	return global
 }
 
+func (c *Compiler) currentInstructions() Instructions {
+	return c.Scopes[c.ScopeIndex].Instructions
+}
+
 func (c *Compiler) enterScope() {
+	scope := Scope{
+		Instructions: Instructions{},
+	}
+	c.Scopes = append(c.Scopes, scope)
+	c.ScopeIndex++
 	newSymbolTable := NewEnclosedSymbolTable(c.SymbolTable)
 	c.SymbolTable = newSymbolTable
 }
 
-func (c *Compiler) leaveScope() {
+func (c *Compiler) leaveScope() Instructions {
+	instructions := c.currentInstructions()
+
+	c.Scopes = c.Scopes[:len(c.Scopes)-1]
+	c.ScopeIndex -= 1
 	c.SymbolTable = c.SymbolTable.Outer
+	return instructions
 }
 
 func (c *Compiler) writeValue(value Object) uint16 {
@@ -502,7 +580,8 @@ func (c *Compiler) writeValue(value Object) uint16 {
 }
 
 func (c *Compiler) disassembleInstruction(offset int) int {
-	definition, err := Lookup(c.Code[offset])
+	instructions := c.currentInstructions()
+	definition, err := Lookup(instructions[offset])
 	newOffset := offset + 1
 
 	if err != nil {
@@ -514,9 +593,9 @@ func (c *Compiler) disassembleInstruction(offset int) int {
 	for _, w := range definition.OperandWidths {
 		switch w {
 		case 2:
-			fmt.Printf(" %v", ReadUint16(c.Code[newOffset:]))
+			fmt.Printf(" %v", ReadUint16(c.Scopes[c.ScopeIndex].Instructions[newOffset:]))
 		case 1:
-			fmt.Printf(" %v", ReadUint8(c.Code[newOffset:]))
+			fmt.Printf(" %v", ReadUint8(c.Scopes[c.ScopeIndex].Instructions[newOffset:]))
 		}
 		newOffset += w
 	}
@@ -525,10 +604,25 @@ func (c *Compiler) disassembleInstruction(offset int) int {
 	return newOffset
 }
 
+func (c *Compiler) lastInstructionIsReturn() bool {
+	instructions := c.currentInstructions()
+	return instructions[len(instructions)-1] == byte(OP_RETURN)
+}
+
 func (c *Compiler) lastInstructionIsPop() bool {
-	return c.Code[len(c.Code)-1] == byte(OP_POP)
+	instructions := c.currentInstructions()
+	return instructions[len(instructions)-1] == byte(OP_POP)
 }
 
 func (c *Compiler) removeLastPop() {
-	c.Code = c.Code[:len(c.Code)-1]
+	instructions := c.currentInstructions()
+	c.Scopes[c.ScopeIndex].Instructions = c.Scopes[c.ScopeIndex].Instructions[:len(instructions)-1]
+}
+
+func ReadUint16(ins Instructions) uint16 {
+	return binary.BigEndian.Uint16(ins)
+}
+
+func ReadUint8(ins Instructions) uint8 {
+	return uint8(ins[0])
 }

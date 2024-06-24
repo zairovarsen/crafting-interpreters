@@ -9,94 +9,138 @@ const (
 	// 256
 	STACK_MAX   = 10
 	MAX_GLOBALS = 1 << 16
+	FRAMES_MAX  = 64
 )
 
 type VM struct {
-	Instructions Instructions
-	Constants    []Object
-	Stack        []Object
-	Ip           int
-	Sp           int
-	Globals      []Object
+	Constants  []Object
+	Stack      []Object
+	Sp         int
+	Globals    []Object
+	Frames     []*CallFrame
+	FrameCount int
+}
+
+type CallFrame struct {
+	Function    *CompiledFunction
+	Ip          int
+	BasePointer int // Points to the base of stack
+}
+
+func (cf *CallFrame) Instructions() Instructions {
+	return cf.Function.Instructions
 }
 
 func NewVM(bytecode *ByteCode) *VM {
-	vm := &VM{Ip: 0, Sp: 0}
-	vm.Instructions = bytecode.Code
+	main := &CompiledFunction{Instructions: bytecode.Code}
+	callFrame := &CallFrame{Function: main, Ip: 0, BasePointer: 0}
+
+	vm := &VM{}
 	vm.Constants = bytecode.Constants
 	vm.Stack = make([]Object, STACK_MAX)
 	vm.Globals = make([]Object, MAX_GLOBALS)
+
+	vm.Frames = make([]*CallFrame, FRAMES_MAX)
+	vm.Frames[0] = callFrame
+	vm.FrameCount++
 	return vm
 }
 
+func (vm *VM) currentFrame() *CallFrame {
+	return vm.Frames[vm.FrameCount-1]
+}
+
 func (vm *VM) run() error {
-	instrLen := len(vm.Instructions)
+	for {
+		frame := vm.currentFrame()
+		ip := frame.Ip
+		instructions := frame.Instructions()
 
-	for vm.Ip != instrLen {
-		instruction := OpCode(vm.Instructions[vm.Ip])
-		// vm.Chunk.disassembleInstruction(vm.Ip)
+		if ip > len(instructions)-1 {
+			return nil
+		}
 
-		definition := definitions[instruction]
-		fmt.Printf("Instruction: %s, Sp: %d, Ip: %d, Stack before: %v\n", definition.Name, vm.Sp, vm.Ip, vm.printStack())
-		vm.Ip += 1
+		opcode := OpCode(instructions[ip])
+		definition := definitions[opcode]
+		fmt.Printf("Instruction: %s, Sp: %d, Ip: %d, Stack before: %v\n", definition.Name, vm.Sp, ip, vm.printStack())
+		ip += 1
 
-		switch instruction {
+		switch opcode {
 		case OP_POP:
 			vm.pop()
 		case OP_RETURN:
-			// result := vm.pop()
-			// fmt.Println(result.Inspect())
-			return nil
-		case OP_GET_BUILTIN:
-			builinIndex := ReadUint8(vm.Instructions[vm.Ip:])
-
-			definition := Builtins[builinIndex]
-
-			err := vm.push(definition.Builtin)
-			if err != nil {
+			returnValue := vm.pop()
+			vm.FrameCount--
+			if vm.FrameCount == 0 {
 				return nil
 			}
+			frame := vm.Frames[vm.FrameCount-1]
+			vm.Sp = frame.BasePointer
+			vm.push(returnValue)
+			fmt.Printf("Frame ip: %d, Instructions len: %d\n", frame.Ip, len(frame.Instructions())-1)
+
+			frame.Ip += 1
+			ip = frame.Ip
+		case OP_FUNCTION:
+			index := ReadUint16(instructions[ip:])
+			vm.push(vm.Constants[index])
+			ip += 2
+		case OP_CALL:
+			numArgs := ReadUint8(instructions[ip:])
+			err := vm.call(int(numArgs))
+			if err != nil {
+				return err
+			}
+			frame = vm.currentFrame()
+			ip = frame.Ip
+		case OP_GET_BUILTIN:
+			builinIndex := ReadUint8(instructions[ip:])
+			definition := Builtins[builinIndex]
+			err := vm.push(definition.Builtin)
+			if err != nil {
+				return err
+			}
 		case OP_GET_GLOBAL:
-			index := ReadUint16(vm.Instructions[vm.Ip:])
-			vm.Ip += 2
+			index := ReadUint16(instructions[ip:])
 			value := vm.Globals[index]
 			err := vm.push(value)
 			if err != nil {
 				return err
 			}
+			ip += 2
 		case OP_GET_LOCAL:
-			index := ReadUint8(vm.Instructions[vm.Ip:])
-			vm.Ip += 1
-			err := vm.push(vm.Stack[index])
+			index := ReadUint8(instructions[ip:])
+			err := vm.push(vm.Stack[frame.BasePointer+int(index)])
 			if err != nil {
 				return err
 			}
+			ip += 1
 		case OP_SET_LOCAL:
-			index := ReadUint8(vm.Instructions[vm.Ip:])
-			vm.Ip += 1
+			index := ReadUint8(instructions[ip:])
+			ip += 1
 			value := vm.pop()
-			vm.Stack[index] = value
+			vm.Stack[frame.BasePointer+int(index)] = value
 		case OP_SET_GLOBAL:
-			index := ReadUint16(vm.Instructions[vm.Ip:])
-			vm.Ip += 2
+			index := ReadUint16(instructions[ip:])
 			vm.Globals[index] = vm.pop()
+			ip += 2
 		case OP_DEFINE_GLOBAL:
-			index := ReadUint16(vm.Instructions[vm.Ip:])
-			vm.Ip += 2
+			index := ReadUint16(instructions[ip:])
 			vm.Globals[index] = vm.pop()
+			ip += 2
 		case OP_DEFINE_LOCAL:
-			index := ReadUint8(vm.Instructions[vm.Ip:])
-			vm.Ip += 1
-			vm.Stack[index] = vm.peek(0)
+			index := ReadUint8(instructions[ip:])
+			vm.Stack[frame.BasePointer+int(index)] = vm.peek(0)
+			ip += 2
 		case OP_CONSTANT:
-			index := ReadUint16(vm.Instructions[vm.Ip:])
-			vm.Ip += 2
+			index := ReadUint16(instructions[ip:])
 			constant := vm.readConstant(int(index))
 
 			err := vm.push(constant)
 			if err != nil {
 				return err
 			}
+			ip += 2
 		case OP_NEGATE:
 			err := vm.negate()
 			if err != nil {
@@ -158,25 +202,71 @@ func (vm *VM) run() error {
 				return err
 			}
 		case OP_JUMP_IF_FALSE:
-			offset := ReadUint16(vm.Instructions[vm.Ip:])
-			vm.Ip += 2
+			offset := ReadUint16(instructions[ip:])
+			ip += 2
 			if !vm.isTruthy(vm.peek(0)) {
 				fmt.Printf("Jumping by offset %d because top of stack is falsey\n", offset)
-				vm.Ip += int(offset)
+				ip += int(offset)
 				vm.pop()
 			}
 		case OP_JUMP:
-			offset := ReadUint16(vm.Instructions[vm.Ip:])
+			offset := ReadUint16(instructions[ip:])
 			fmt.Printf("Unconditional jump by offset %d\n", offset)
-			vm.Ip += int(offset)
+			ip += int(offset)
 		case OP_LOOP:
-			offset := ReadUint16(vm.Instructions[vm.Ip:])
+			offset := ReadUint16(instructions[ip:])
 			fmt.Printf("Looping back by offset %d\n", offset)
-			vm.Ip += 1
-			vm.Ip -= int(offset)
+			ip += 1
+			ip -= int(offset)
 		}
 
+		vm.Frames[vm.FrameCount-1].Ip = ip
 		fmt.Printf("Stack after: %v\n", vm.printStack())
+
+	}
+}
+
+func (vm *VM) call(numArgs int) error {
+	value := vm.Stack[vm.Sp-1-numArgs]
+
+	switch callee := value.(type) {
+	case *CompiledFunction:
+		return vm.callFunction(callee, numArgs)
+	case *Builtin:
+		return vm.callBuiltin(callee, numArgs)
+	default:
+		return fmt.Errorf("%s is not a function", value.Inspect())
+	}
+}
+
+func (vm *VM) callFunction(callee *CompiledFunction, numArgs int) error {
+	if numArgs != callee.NumParameters {
+		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", callee.NumParameters, numArgs)
+	}
+
+	frame := &CallFrame{
+		Function:    callee,
+		Ip:          0,
+		BasePointer: vm.Sp - int(numArgs),
+	}
+	vm.Frames[vm.FrameCount] = frame
+	vm.FrameCount++
+
+	fmt.Println("locals %d\n", callee.NumLocals)
+	vm.Sp = frame.BasePointer + callee.NumLocals
+	return nil
+}
+
+func (vm *VM) callBuiltin(builtin *Builtin, numArgs int) error {
+	args := vm.Stack[vm.Sp-numArgs : vm.Sp]
+
+	result := builtin.Fn(args...)
+	vm.Sp = vm.Sp - numArgs - 1
+
+	if result != nil {
+		vm.push(result)
+	} else {
+		vm.push(Null)
 	}
 
 	return nil
