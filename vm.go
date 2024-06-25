@@ -33,7 +33,7 @@ func (cf *CallFrame) Instructions() Instructions {
 
 func NewVM(bytecode *ByteCode) *VM {
 	main := &CompiledFunction{Instructions: bytecode.Code}
-	callFrame := &CallFrame{Function: main, Ip: 0, BasePointer: 0}
+	mainFrame := &CallFrame{Function: main, Ip: 0, BasePointer: 0}
 
 	vm := &VM{}
 	vm.Constants = bytecode.Constants
@@ -41,8 +41,7 @@ func NewVM(bytecode *ByteCode) *VM {
 	vm.Globals = make([]Object, MAX_GLOBALS)
 
 	vm.Frames = make([]*CallFrame, FRAMES_MAX)
-	vm.Frames[0] = callFrame
-	vm.FrameCount++
+	vm.pushFrame(mainFrame)
 	return vm
 }
 
@@ -53,94 +52,89 @@ func (vm *VM) currentFrame() *CallFrame {
 func (vm *VM) run() error {
 	for {
 		frame := vm.currentFrame()
-		ip := frame.Ip
+		ip := &frame.Ip
 		instructions := frame.Instructions()
 
-		if ip > len(instructions)-1 {
+		if *ip > len(instructions)-1 {
 			return nil
 		}
 
-		opcode := OpCode(instructions[ip])
+		opcode := OpCode(instructions[*ip])
 		definition := definitions[opcode]
 		fmt.Printf("Instruction: %s, Sp: %d, Ip: %d, Stack before: %v\n", definition.Name, vm.Sp, ip, vm.printStack())
-		ip += 1
+		*ip += 1
 
 		switch opcode {
 		case OP_POP:
 			vm.pop()
 		case OP_RETURN:
 			returnValue := vm.pop()
-			vm.FrameCount--
 			if vm.FrameCount == 0 {
 				return nil
 			}
-			frame := vm.Frames[vm.FrameCount-1]
-			vm.Sp = frame.BasePointer
+			frame := vm.popFrame()
+			vm.Sp = frame.BasePointer - 1
 			vm.push(returnValue)
 			fmt.Printf("Frame ip: %d, Instructions len: %d\n", frame.Ip, len(frame.Instructions())-1)
-
-			frame.Ip += 1
-			ip = frame.Ip
 		case OP_FUNCTION:
-			index := ReadUint16(instructions[ip:])
+			index := ReadUint16(instructions[*ip:])
 			vm.push(vm.Constants[index])
-			ip += 2
+			*ip += 2
 		case OP_CALL:
-			numArgs := ReadUint8(instructions[ip:])
+			numArgs := ReadUint8(instructions[*ip:])
+			*ip += 1
 			err := vm.call(int(numArgs))
 			if err != nil {
 				return err
 			}
-			frame = vm.currentFrame()
-			ip = frame.Ip
 		case OP_GET_BUILTIN:
-			builinIndex := ReadUint8(instructions[ip:])
+			builinIndex := ReadUint8(instructions[*ip:])
 			definition := Builtins[builinIndex]
 			err := vm.push(definition.Builtin)
 			if err != nil {
 				return err
 			}
 		case OP_GET_GLOBAL:
-			index := ReadUint16(instructions[ip:])
+			index := ReadUint16(instructions[*ip:])
 			value := vm.Globals[index]
 			err := vm.push(value)
 			if err != nil {
 				return err
 			}
-			ip += 2
+			*ip += 2
 		case OP_GET_LOCAL:
-			index := ReadUint8(instructions[ip:])
+			index := ReadUint8(instructions[*ip:])
 			err := vm.push(vm.Stack[frame.BasePointer+int(index)])
 			if err != nil {
 				return err
 			}
-			ip += 1
+			*ip += 1
 		case OP_SET_LOCAL:
-			index := ReadUint8(instructions[ip:])
-			ip += 1
+			index := ReadUint8(instructions[*ip:])
+			*ip += 1
 			value := vm.pop()
 			vm.Stack[frame.BasePointer+int(index)] = value
 		case OP_SET_GLOBAL:
-			index := ReadUint16(instructions[ip:])
+			index := ReadUint16(instructions[*ip:])
 			vm.Globals[index] = vm.pop()
-			ip += 2
+			*ip += 2
 		case OP_DEFINE_GLOBAL:
-			index := ReadUint16(instructions[ip:])
+			index := ReadUint16(instructions[*ip:])
 			vm.Globals[index] = vm.pop()
-			ip += 2
+			*ip += 2
 		case OP_DEFINE_LOCAL:
-			index := ReadUint8(instructions[ip:])
+			index := ReadUint8(instructions[*ip:])
 			vm.Stack[frame.BasePointer+int(index)] = vm.peek(0)
-			ip += 2
+			*ip += 2
 		case OP_CONSTANT:
-			index := ReadUint16(instructions[ip:])
+			index := ReadUint16(instructions[*ip:])
 			constant := vm.readConstant(int(index))
 
 			err := vm.push(constant)
 			if err != nil {
 				return err
 			}
-			ip += 2
+			*ip += 2
 		case OP_NEGATE:
 			err := vm.negate()
 			if err != nil {
@@ -202,25 +196,24 @@ func (vm *VM) run() error {
 				return err
 			}
 		case OP_JUMP_IF_FALSE:
-			offset := ReadUint16(instructions[ip:])
-			ip += 2
+			offset := ReadUint16(instructions[*ip:])
+			*ip += 2
 			if !vm.isTruthy(vm.peek(0)) {
 				fmt.Printf("Jumping by offset %d because top of stack is falsey\n", offset)
-				ip += int(offset)
+				*ip += int(offset)
 				vm.pop()
 			}
 		case OP_JUMP:
-			offset := ReadUint16(instructions[ip:])
+			offset := ReadUint16(instructions[*ip:])
 			fmt.Printf("Unconditional jump by offset %d\n", offset)
-			ip += int(offset)
+			*ip += int(offset)
 		case OP_LOOP:
-			offset := ReadUint16(instructions[ip:])
+			offset := ReadUint16(instructions[*ip:])
 			fmt.Printf("Looping back by offset %d\n", offset)
-			ip += 1
-			ip -= int(offset)
+			*ip += 1
+			*ip -= int(offset)
 		}
 
-		vm.Frames[vm.FrameCount-1].Ip = ip
 		fmt.Printf("Stack after: %v\n", vm.printStack())
 
 	}
@@ -239,6 +232,18 @@ func (vm *VM) call(numArgs int) error {
 	}
 }
 
+func (vm *VM) pushFrame(frame *CallFrame) {
+	vm.Frames[vm.FrameCount] = frame
+	vm.FrameCount++
+}
+
+func (vm *VM) popFrame() *CallFrame {
+	frame := vm.Frames[vm.FrameCount-1]
+	vm.Frames = vm.Frames[:vm.FrameCount-1]
+	vm.FrameCount--
+	return frame
+}
+
 func (vm *VM) callFunction(callee *CompiledFunction, numArgs int) error {
 	if numArgs != callee.NumParameters {
 		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", callee.NumParameters, numArgs)
@@ -249,10 +254,8 @@ func (vm *VM) callFunction(callee *CompiledFunction, numArgs int) error {
 		Ip:          0,
 		BasePointer: vm.Sp - int(numArgs),
 	}
-	vm.Frames[vm.FrameCount] = frame
-	vm.FrameCount++
 
-	fmt.Println("locals %d\n", callee.NumLocals)
+	vm.pushFrame(frame)
 	vm.Sp = frame.BasePointer + callee.NumLocals
 	return nil
 }

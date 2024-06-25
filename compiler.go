@@ -123,7 +123,6 @@ func (c *Compiler) Compile(ast Node) error {
 		}
 
 		if !c.lastInstructionIsReturn() {
-			c.WriteChunk(OP_NIL, node.Token.Line) // Ensure OP_NIL before OP_RETURN if no explicit return
 			c.WriteChunk(OP_RETURN, node.Token.Line)
 		}
 
