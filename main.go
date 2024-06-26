@@ -89,12 +89,13 @@ func run(source []byte, env *Environment) {
 		return
 	}
 	// debugging
+	fmt.Printf("Bytecode for `%s`\n", "main")
 	compiler.DisassembleChunks()
 
 	vm := NewVM(compiler.ByteCode())
 	vmError := vm.run()
 	if vmError != nil {
-		fmt.Println(vmError)
+		vm.prinStackTrace(vmError)
 		return
 	}
 

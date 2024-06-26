@@ -4,6 +4,7 @@ const (
 	GLOBAL_SCOPE  = "global"
 	LOCAL_SCOPE   = "local"
 	BUILTIN_SCOPE = "builtin"
+	UPVALUE_SCOPE = "upvalue"
 )
 
 type Symbol struct {
@@ -17,6 +18,8 @@ type SymbolTable struct {
 
 	store          map[string]Symbol
 	numDefinitions int
+
+	upvalues []Symbol
 }
 
 func NewSymbolTable() *SymbolTable {
@@ -62,6 +65,20 @@ func (s *SymbolTable) Resolve(name string) (Symbol, bool) {
 		if !ok {
 			return obj, ok
 		}
+
+		if obj.Scope == GLOBAL_SCOPE || obj.Scope == BUILTIN_SCOPE {
+			return obj, ok
+		}
+
+		upvalue := s.DefineUpvalue(obj)
+		return upvalue, true
 	}
 	return obj, ok
+}
+
+func (s *SymbolTable) DefineUpvalue(original Symbol) Symbol {
+	s.upvalues = append(s.upvalues, original)
+	symbol := Symbol{Name: original.Name, Index: len(s.upvalues) - 1, Scope: UPVALUE_SCOPE}
+	s.store[original.Name] = symbol
+	return symbol
 }

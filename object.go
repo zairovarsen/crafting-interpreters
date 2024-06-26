@@ -42,7 +42,76 @@ type Object interface {
 	Inspect() string
 }
 
+type CompiledClassObject struct {
+	Name       *Identifier
+	SuperClass *CompiledClassObject
+	Methods    map[string]*Closure
+}
+
+func (c *CompiledClassObject) Type() ObjectType { return ClassObj }
+func (c *CompiledClassObject) Inspect() string {
+	var str strings.Builder
+
+	var methods []string
+	for _, m := range c.Methods {
+		methods = append(methods, m.Inspect())
+	}
+
+	str.WriteString("class")
+	if c.Name != nil {
+		str.WriteString(" " + c.Name.Value)
+	}
+	if c.SuperClass != nil {
+		str.WriteString(" extends " + c.SuperClass.Name.Value)
+	}
+	str.WriteString(" {\n")
+	str.WriteString(strings.Join(methods, "\n"))
+	str.WriteString("\n}")
+
+	return str.String()
+}
+
+// func (c *CompiledClassObject) GetSuperMethod(name string) (*Function, bool) {
+// 	if c.SuperClass != nil {
+// 		super := c.SuperClass
+// 		for super != nil {
+// 			method, ok := super.Methods[name]
+// 			if ok {
+// 				return method, ok
+// 			}
+// 			super = super.SuperClass
+// 		}
+// 	}
+// 	return nil, false
+// }
+
+// func (c *CompiledClassObject) GetMethod(name string) (*Function, bool) {
+// 	method, ok := c.Methods[name]
+// 	if !ok && c.SuperClass != nil {
+// 		super := c.SuperClass
+// 		for super != nil {
+// 			method, ok = super.Methods[name]
+// 			if ok {
+// 				return method, ok
+// 			}
+// 			super = super.SuperClass
+// 		}
+// 	}
+// 	return method, ok
+// }
+
+type Closure struct {
+	Function *CompiledFunction
+	UpValues []Object
+}
+
+func (c *Closure) Type() ObjectType { return ClosureObj }
+func (c *Closure) Inspect() string {
+	return fmt.Sprintf("Closure[%p]", c)
+}
+
 type CompiledFunction struct {
+	Name          string
 	Instructions  Instructions
 	NumLocals     int
 	NumParameters int
@@ -51,6 +120,30 @@ type CompiledFunction struct {
 func (cf *CompiledFunction) Type() ObjectType { return CompiledFunctionObj }
 func (cf *CompiledFunction) Inspect() string {
 	return fmt.Sprintf("CompiledFunction[%p]", cf)
+}
+
+type CompiledInstanceObject struct {
+	Class  *CompiledClassObject
+	Fields map[string]Object
+}
+
+func (io *CompiledInstanceObject) Type() ObjectType { return InstanceObj }
+func (io *CompiledInstanceObject) Inspect() string {
+	fields := []string{}
+	for key, value := range io.Fields {
+		fields = append(fields, fmt.Sprintf("%s: %v", key, value))
+	}
+	return fmt.Sprintf("<instance of %s> {%s}", io.Class.Name, strings.Join(fields, ", "))
+}
+
+type CompiledBoundMethod struct {
+	Receiver *CompiledInstanceObject
+	Method   *Closure
+}
+
+func (bm *CompiledBoundMethod) Type() ObjectType { return BoundObj }
+func (bm *CompiledBoundMethod) Inspect() string {
+	return fmt.Sprintf("<bound method %s of %s>", bm.Method.Function.Name, bm.Receiver.Class.Name)
 }
 
 type ContinueSignal struct{}

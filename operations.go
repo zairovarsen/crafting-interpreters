@@ -27,12 +27,18 @@ const (
 	OP_SET_LOCAL
 	OP_GET_BUILTIN
 	OP_GET_GLOBAL
+	OP_GET_UPVALUE
 	OP_GET_LOCAL
 	OP_JUMP_IF_FALSE
 	OP_JUMP
 	OP_LOOP
 	OP_CALL
 	OP_FUNCTION
+	OP_CLOSURE
+	OP_CLASS
+	OP_SET_PROPERTY
+	OP_GET_PROPERTY
+	OP_METHOD
 )
 
 type Definition struct {
@@ -68,6 +74,12 @@ var definitions = map[OpCode]*Definition{
 	OP_LOOP:          {"OP_LOOP", []int{2}},
 	OP_CALL:          {"OP_CALL", []int{1}},
 	OP_FUNCTION:      {"OP_FUNCTION", []int{2}},
+	OP_CLOSURE:       {"OP_CLOSURE", []int{2, 1}},
+	OP_GET_UPVALUE:   {"OP_GET_UPVALUE", []int{1}},
+	OP_CLASS:         {"OP_CLASS", []int{2}},
+	OP_SET_PROPERTY:  {"OP_SET_PROPERTY", []int{1}},
+	OP_GET_PROPERTY:  {"OP_GET_PROPERTY", []int{1}},
+	OP_METHOD:        {"OP_METHOD", []int{2}},
 }
 
 func Lookup(opcode byte) (*Definition, error) {

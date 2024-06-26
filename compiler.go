@@ -83,6 +83,9 @@ func (c *Compiler) Compile(ast Node) error {
 			}
 		}
 	case *ReturnStatement:
+		if c.ScopeIndex == 0 {
+			return fmt.Errorf("Can't return from top-level code")
+		}
 		if err := c.Compile(node.ReturnValue); err != nil {
 			return err
 		}
@@ -106,7 +109,34 @@ func (c *Compiler) Compile(ast Node) error {
 		}
 
 		c.WriteChunk(OP_CALL, node.Token.Line, argCount)
+	case *ClassStatement:
+		symbol := c.SymbolTable.Define(node.Name.Value)
+		class := &CompiledClassObject{Name: node.Name, Methods: make(map[string]*Closure)}
+
+		classIndex := c.MakeConstant(class)
+		c.WriteChunk(OP_CLASS, node.Token.Line, classIndex)
+
+		if c.ScopeIndex == 0 {
+			c.WriteChunk(OP_DEFINE_GLOBAL, node.Token.Line, symbol.Index)
+		} else {
+			c.WriteChunk(OP_DEFINE_LOCAL, node.Token.Line, symbol.Index)
+		}
+
+		for _, method := range node.Methods {
+			if err := c.CompileMethod(method, node.Name.Value); err != nil {
+				return err
+			}
+		}
+
+		c.WriteByte(byte(OP_POP))
+	case *This:
+		symbol, ok := c.SymbolTable.Resolve("this")
+		if !ok {
+			return fmt.Errorf("undefined variable 'this'")
+		}
+		c.loadSymbol(symbol, node.Token.Line)
 	case *FunctionDeclaration:
+
 		symbol := c.SymbolTable.Define(node.Name.Value)
 		c.enterScope()
 
@@ -126,17 +156,26 @@ func (c *Compiler) Compile(ast Node) error {
 			c.WriteChunk(OP_RETURN, node.Token.Line)
 		}
 
-		numLocals := c.SymbolTable.numDefinitions - len(node.Params)
+		upvalues := c.SymbolTable.upvalues
+		numLocals := c.SymbolTable.numDefinitions
+
+		fmt.Printf("Bytecode for `%s`\n", node.Name.Value)
+		c.DisassembleChunks()
 		instructions := c.leaveScope()
+
+		for _, upvalue := range upvalues {
+			c.loadSymbol(upvalue, node.Token.Line)
+		}
 
 		compiledFunction := &CompiledFunction{
 			Instructions:  instructions,
 			NumLocals:     numLocals,
 			NumParameters: len(node.Params),
+			Name:          node.Name.Value,
 		}
 
 		fnIndex := c.MakeConstant(compiledFunction)
-		c.WriteChunk(OP_FUNCTION, node.Token.Line, fnIndex)
+		c.WriteChunk(OP_CLOSURE, node.Token.Line, fnIndex, len(upvalues))
 
 		if c.ScopeIndex == 0 {
 			c.WriteChunk(OP_DEFINE_GLOBAL, node.Token.Line, symbol.Index)
@@ -252,6 +291,24 @@ func (c *Compiler) Compile(ast Node) error {
 		}
 
 		c.leaveScope()
+	case *GetExpression:
+		if err := c.Compile(node.Object); err != nil {
+			return err
+		}
+
+		constant := c.MakeConstant(&StringObject{Value: node.Property.Value})
+		c.WriteChunk(OP_GET_PROPERTY, node.Token.Line, constant)
+	case *SetExpression:
+		if err := c.Compile(node.Object); err != nil {
+			return err
+		}
+
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+
+		constant := c.MakeConstant(&StringObject{Value: node.Property.Value})
+		c.WriteChunk(OP_SET_PROPERTY, node.Token.Line, constant)
 	case *Assignment:
 		if symbol, ok := c.SymbolTable.Resolve(node.Identifier.Value); !ok {
 			return fmt.Errorf("Undeclared identifier: %s", node.Identifier.Value)
@@ -265,25 +322,14 @@ func (c *Compiler) Compile(ast Node) error {
 				c.WriteChunk(OP_NIL, node.Token.Line)
 			}
 
-			if symbol.Scope == GLOBAL_SCOPE {
-				c.WriteChunk(OP_SET_GLOBAL, node.Token.Line, symbol.Index)
-			} else {
-				c.WriteChunk(OP_SET_LOCAL, node.Token.Line, symbol.Index)
-			}
+			c.setSymbol(symbol, node.Token.Line)
 		}
 	case *Identifier:
 		symbol, ok := c.SymbolTable.Resolve(node.Value)
 		if !ok {
 			return fmt.Errorf("Undefined variable: %s", node.Value)
 		}
-		switch symbol.Scope {
-		case GLOBAL_SCOPE:
-			c.WriteChunk(OP_GET_GLOBAL, node.Token.Line, symbol.Index)
-		case LOCAL_SCOPE:
-			c.WriteChunk(OP_GET_LOCAL, node.Token.Line, symbol.Index)
-		case BUILTIN_SCOPE:
-			c.WriteChunk(OP_GET_BUILTIN, node.Token.Line, symbol.Index)
-		}
+		c.loadSymbol(symbol, node.Token.Line)
 	case *StringLiteral:
 		value := &StringObject{Value: node.Value}
 		c.WriteChunk(OP_CONSTANT, node.Token.Line, c.MakeConstant(value))
@@ -415,6 +461,79 @@ func (c *Compiler) Compile(ast Node) error {
 	}
 
 	return nil
+}
+
+func (c *Compiler) CompileMethod(method *MethodDeclaration, className string) error {
+	symbol, ok := c.SymbolTable.Resolve(className)
+	if !ok {
+		return fmt.Errorf("Undefined class: %s", className)
+	}
+	c.loadSymbol(symbol, method.Token.Line)
+
+	methodName := c.MakeConstant(&StringObject{Value: method.Name.Value})
+	c.enterScope()
+
+	for _, p := range method.Params {
+		c.SymbolTable.Define(p.Value)
+	}
+
+	if err := c.Compile(method.Body); err != nil {
+		return err
+	}
+
+	if c.lastInstructionIsPop() {
+		c.removeLastPop()
+	}
+
+	if !c.lastInstructionIsReturn() {
+		c.WriteChunk(OP_RETURN, method.Token.Line)
+	}
+
+	upvalues := c.SymbolTable.upvalues
+	numLocals := c.SymbolTable.numDefinitions
+
+	fmt.Printf("Bytecode for `%s`\n", method.Name.Value)
+	c.DisassembleChunks()
+	instructions := c.leaveScope()
+
+	for _, upvalue := range upvalues {
+		c.loadSymbol(upvalue, method.Token.Line)
+	}
+
+	compiledFunction := &CompiledFunction{
+		Instructions:  instructions,
+		NumLocals:     numLocals,
+		NumParameters: len(method.Params),
+		Name:          method.Name.Value,
+	}
+
+	fnIndex := c.MakeConstant(compiledFunction)
+	c.WriteChunk(OP_CLOSURE, method.Token.Line, fnIndex, len(upvalues))
+
+	c.WriteChunk(OP_METHOD, method.Token.Line, methodName)
+	return nil
+}
+
+func (c *Compiler) loadSymbol(symbol Symbol, line int) {
+	switch symbol.Scope {
+	case GLOBAL_SCOPE:
+		c.WriteChunk(OP_GET_GLOBAL, line, symbol.Index)
+	case LOCAL_SCOPE:
+		c.WriteChunk(OP_GET_LOCAL, line, symbol.Index)
+	case BUILTIN_SCOPE:
+		c.WriteChunk(OP_GET_BUILTIN, line, symbol.Index)
+	case UPVALUE_SCOPE:
+		c.WriteChunk(OP_GET_UPVALUE, line, symbol.Index)
+	}
+}
+
+func (c *Compiler) setSymbol(symbol Symbol, line int) {
+	switch symbol.Scope {
+	case GLOBAL_SCOPE:
+		c.WriteChunk(OP_SET_GLOBAL, line, symbol.Index)
+	case LOCAL_SCOPE:
+		c.WriteChunk(OP_SET_LOCAL, line, symbol.Index)
+	}
 }
 
 func (c *Compiler) or(node *Logical) error {

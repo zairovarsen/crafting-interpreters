@@ -19,21 +19,23 @@ type VM struct {
 	Globals    []Object
 	Frames     []*CallFrame
 	FrameCount int
+	LineInfo   []LineInfo
 }
 
 type CallFrame struct {
-	Function    *CompiledFunction
+	Closure     *Closure
 	Ip          int
 	BasePointer int // Points to the base of stack
 }
 
 func (cf *CallFrame) Instructions() Instructions {
-	return cf.Function.Instructions
+	return cf.Closure.Function.Instructions
 }
 
 func NewVM(bytecode *ByteCode) *VM {
-	main := &CompiledFunction{Instructions: bytecode.Code}
-	mainFrame := &CallFrame{Function: main, Ip: 0, BasePointer: 0}
+	main := &CompiledFunction{Instructions: bytecode.Code, Name: "main"}
+	closure := &Closure{Function: main}
+	mainFrame := &CallFrame{Closure: closure, Ip: 0, BasePointer: 0}
 
 	vm := &VM{}
 	vm.Constants = bytecode.Constants
@@ -43,6 +45,41 @@ func NewVM(bytecode *ByteCode) *VM {
 	vm.Frames = make([]*CallFrame, FRAMES_MAX)
 	vm.pushFrame(mainFrame)
 	return vm
+}
+
+func (vm *VM) GetLine(insIndex int) int {
+	accumulatedCount := 0
+
+	for _, info := range vm.LineInfo {
+		accumulatedCount += info.Count
+		if insIndex < accumulatedCount {
+			return info.Line
+		}
+	}
+
+	return -1 // In case of an invalid instruction index
+}
+
+func (vm *VM) prinStackTrace(err error) {
+
+	fmt.Println(err)
+
+	for i := vm.FrameCount - 1; i >= 0; i-- {
+		frame := vm.Frames[i]
+		function := frame.Closure.Function
+
+		opcode := OpCode(function.Instructions[frame.Ip-1])
+		definition, ok := definitions[opcode]
+
+		if !ok {
+			return
+		}
+
+		line := vm.GetLine(frame.Ip - 1)
+		fmt.Printf("[Instruction %s], ", definition.Name)
+		fmt.Printf("[Line %d] in ", line)
+		fmt.Printf("%s()\n", function.Name)
+	}
 }
 
 func (vm *VM) currentFrame() *CallFrame {
@@ -61,7 +98,8 @@ func (vm *VM) run() error {
 
 		opcode := OpCode(instructions[*ip])
 		definition := definitions[opcode]
-		fmt.Printf("Instruction: %s, Sp: %d, Ip: %d, Stack before: %v\n", definition.Name, vm.Sp, ip, vm.printStack())
+		line := vm.GetLine(*ip)
+		fmt.Printf("Instruction: %s, Sp: %d, Ip: %d, Line: %d", definition.Name, vm.Sp, *ip, line)
 		*ip += 1
 
 		switch opcode {
@@ -75,18 +113,89 @@ func (vm *VM) run() error {
 			frame := vm.popFrame()
 			vm.Sp = frame.BasePointer - 1
 			vm.push(returnValue)
-			fmt.Printf("Frame ip: %d, Instructions len: %d\n", frame.Ip, len(frame.Instructions())-1)
+		case OP_CLOSURE:
+			index := ReadUint16(instructions[*ip:])
+			*ip += 2
+			nUpValues := ReadUint8(instructions[*ip:])
+			*ip += 1
+			object := vm.Constants[index]
+			function, ok := object.(*CompiledFunction)
+			if !ok {
+				return fmt.Errorf("not a function +%v", object)
+			}
+
+			upvalues := make([]Object, nUpValues)
+			for i := 0; i < int(nUpValues); i++ {
+				upvalues[i] = vm.Stack[vm.Sp-int(nUpValues)+i]
+			}
+			vm.Sp = vm.Sp - int(nUpValues)
+
+			closure := &Closure{Function: function, UpValues: upvalues}
+			vm.push(closure)
+		case OP_CLASS:
+			index := ReadUint16(instructions[*ip:])
+			vm.push(vm.Constants[index])
+			*ip += 2
 		case OP_FUNCTION:
 			index := ReadUint16(instructions[*ip:])
 			vm.push(vm.Constants[index])
 			*ip += 2
 		case OP_CALL:
 			numArgs := ReadUint8(instructions[*ip:])
-			*ip += 1
 			err := vm.call(int(numArgs))
 			if err != nil {
 				return err
 			}
+			*ip += 1
+		case OP_SET_PROPERTY:
+			index := ReadUint8(instructions[*ip:])
+			*ip += 1
+
+			// Get property name from constatnts
+			name := vm.Constants[index]
+
+			// Ensure it is a string
+			str, ok := name.(*StringObject)
+			if !ok {
+				return fmt.Errorf("property is not a string +%v", name)
+			}
+
+			value := vm.pop()
+			object := vm.pop()
+
+			instance, ok := object.(*CompiledInstanceObject)
+			if !ok {
+				return fmt.Errorf("only instance have properties, got +%v", object)
+			}
+
+			instance.Fields[str.Value] = value
+			vm.push(value)
+		case OP_GET_PROPERTY:
+			index := ReadUint8(instructions[*ip:])
+			*ip += 1
+			object := vm.peek(0)
+			name := vm.Constants[index]
+
+			str, ok := name.(*StringObject)
+			if !ok {
+				return fmt.Errorf("property is not a string +%v", name)
+			}
+
+			instance, ok := object.(*CompiledInstanceObject)
+			if !ok {
+				return fmt.Errorf("only instance have properties, got +%v", object)
+			}
+
+			if value, ok := instance.Fields[str.Value]; ok {
+				vm.pop()
+				vm.push(value)
+				return nil
+			}
+
+			if err := vm.bindMethod(instance, str.Value); err != nil {
+				return err
+			}
+
 		case OP_GET_BUILTIN:
 			builinIndex := ReadUint8(instructions[*ip:])
 			definition := Builtins[builinIndex]
@@ -94,6 +203,7 @@ func (vm *VM) run() error {
 			if err != nil {
 				return err
 			}
+			*ip += 1
 		case OP_GET_GLOBAL:
 			index := ReadUint16(instructions[*ip:])
 			value := vm.Globals[index]
@@ -102,6 +212,41 @@ func (vm *VM) run() error {
 				return err
 			}
 			*ip += 2
+		case OP_GET_UPVALUE:
+			index := ReadUint8(instructions[*ip:])
+			*ip += 1
+
+			closure := vm.currentFrame().Closure
+			err := vm.push(closure.UpValues[index])
+			if err != nil {
+				return err
+			}
+		case OP_METHOD:
+			index := ReadUint16(instructions[*ip:])
+			*ip += 2
+			object := vm.peek(0)
+			object2 := vm.peek(1)
+			name := vm.Constants[index]
+
+			str, ok := name.(*StringObject)
+			if !ok {
+				return fmt.Errorf("function name is not a string +%v", name)
+			}
+
+			method, ok := object.(*Closure)
+			if !ok {
+				return fmt.Errorf("not a method: %+v", object)
+			}
+
+			class, ok := object2.(*CompiledClassObject)
+			if !ok {
+				return fmt.Errorf("not a Class: %+v", object2)
+			}
+
+			class.Methods[str.Value] = method
+
+			// pop compiled function
+			vm.pop()
 		case OP_GET_LOCAL:
 			index := ReadUint8(instructions[*ip:])
 			err := vm.push(vm.Stack[frame.BasePointer+int(index)])
@@ -124,17 +269,18 @@ func (vm *VM) run() error {
 			*ip += 2
 		case OP_DEFINE_LOCAL:
 			index := ReadUint8(instructions[*ip:])
-			vm.Stack[frame.BasePointer+int(index)] = vm.peek(0)
-			*ip += 2
+			*ip += 1
+			value := vm.pop()
+			vm.Stack[frame.BasePointer+int(index)] = value
 		case OP_CONSTANT:
 			index := ReadUint16(instructions[*ip:])
-			constant := vm.readConstant(int(index))
+			*ip += 2
 
+			constant := vm.readConstant(int(index))
 			err := vm.push(constant)
 			if err != nil {
 				return err
 			}
-			*ip += 2
 		case OP_NEGATE:
 			err := vm.negate()
 			if err != nil {
@@ -214,8 +360,7 @@ func (vm *VM) run() error {
 			*ip -= int(offset)
 		}
 
-		fmt.Printf("Stack after: %v\n", vm.printStack())
-
+		fmt.Printf(", NewSp: %d, Stack: %s\n", vm.Sp, vm.printStack())
 	}
 }
 
@@ -223,10 +368,14 @@ func (vm *VM) call(numArgs int) error {
 	value := vm.Stack[vm.Sp-1-numArgs]
 
 	switch callee := value.(type) {
-	case *CompiledFunction:
+	case *CompiledBoundMethod:
+		return vm.callBoundMethod(callee, numArgs)
+	case *Closure:
 		return vm.callFunction(callee, numArgs)
 	case *Builtin:
 		return vm.callBuiltin(callee, numArgs)
+	case *CompiledClassObject:
+		return vm.callClass(callee, numArgs)
 	default:
 		return fmt.Errorf("%s is not a function", value.Inspect())
 	}
@@ -238,30 +387,72 @@ func (vm *VM) pushFrame(frame *CallFrame) {
 }
 
 func (vm *VM) popFrame() *CallFrame {
-	frame := vm.Frames[vm.FrameCount-1]
-	vm.Frames = vm.Frames[:vm.FrameCount-1]
 	vm.FrameCount--
-	return frame
+	return vm.Frames[vm.FrameCount]
 }
 
-func (vm *VM) callFunction(callee *CompiledFunction, numArgs int) error {
-	if numArgs != callee.NumParameters {
-		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", callee.NumParameters, numArgs)
+func (vm *VM) bindMethod(instance *CompiledInstanceObject, methodName string) error {
+	if method, ok := instance.Class.Methods[methodName]; !ok {
+		return fmt.Errorf("Undefined property %s.", methodName)
+	} else {
+		bound := &CompiledBoundMethod{Receiver: instance, Method: method}
+
+		// pop the instance
+		vm.pop()
+
+		// push bound method on top of stack
+		vm.push(bound)
+		return nil
+	}
+}
+
+func (vm *VM) callBoundMethod(method *CompiledBoundMethod, numArgs int) error {
+	return vm.callFunction(method.Method, numArgs)
+}
+
+func (vm *VM) callClass(class *CompiledClassObject, numArgs int) error {
+	// check if the inti methods match
+	instance := &CompiledInstanceObject{Class: class, Fields: make(map[string]Object)}
+	vm.Stack[vm.Sp-numArgs-1] = instance
+
+	// Check if the class has an "init" method (constructor)
+	if initMethod, ok := class.Methods["init"]; ok {
+		return vm.callBoundMethod(&CompiledBoundMethod{Receiver: instance, Method: initMethod}, numArgs)
+	}
+
+	// If there is no constructor, just adjust the stack pointer
+	vm.Sp -= numArgs
+	return nil
+}
+
+func (vm *VM) NewFrame(closure *Closure, bp int) *CallFrame {
+	return &CallFrame{
+		Closure:     closure,
+		Ip:          0,
+		BasePointer: bp,
+	}
+}
+
+func (vm *VM) callFunction(callee *Closure, numArgs int) error {
+	function := callee.Function
+	if numArgs != function.NumParameters {
+		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", function.NumParameters, numArgs)
 	}
 
 	frame := &CallFrame{
-		Function:    callee,
+		Closure:     callee,
 		Ip:          0,
 		BasePointer: vm.Sp - int(numArgs),
 	}
 
 	vm.pushFrame(frame)
-	vm.Sp = frame.BasePointer + callee.NumLocals
+	vm.Sp = frame.BasePointer + function.NumLocals
 	return nil
 }
 
 func (vm *VM) callBuiltin(builtin *Builtin, numArgs int) error {
 	args := vm.Stack[vm.Sp-numArgs : vm.Sp]
+	fmt.Println(args)
 
 	result := builtin.Fn(args...)
 	vm.Sp = vm.Sp - numArgs - 1
@@ -448,17 +639,19 @@ func (vm *VM) printStack() string {
 	var str strings.Builder
 
 	str.WriteString("[")
-
 	for i := 0; i < vm.Sp; i++ {
-		obj := vm.Stack[i]
-		if obj != nil {
-			str.WriteString(obj.Inspect() + ", ")
-			continue
+		if vm.Stack[i] != nil {
+			str.WriteString(vm.Stack[i].Inspect())
+		} else {
+			str.WriteString("nil")
 		}
-		break
-	}
 
+		if i != vm.Sp-1 {
+			str.WriteString(",")
+		}
+	}
 	str.WriteString("]")
+
 	return str.String()
 }
 
