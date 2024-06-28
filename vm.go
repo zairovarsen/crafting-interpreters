@@ -160,15 +160,18 @@ func (vm *VM) run() error {
 				return fmt.Errorf("property is not a string +%v", name)
 			}
 
-			value := vm.pop()
-			object := vm.pop()
+			object := vm.peek(1)
 
 			instance, ok := object.(*CompiledInstanceObject)
 			if !ok {
 				return fmt.Errorf("only instance have properties, got +%v", object)
 			}
 
-			instance.Fields[str.Value] = value
+			instance.Fields[str.Value] = vm.peek(0)
+			// stored value
+			value := vm.pop()
+			// instance
+			vm.pop()
 			vm.push(value)
 		case OP_GET_PROPERTY:
 			index := ReadUint8(instructions[*ip:])
@@ -178,18 +181,22 @@ func (vm *VM) run() error {
 
 			str, ok := name.(*StringObject)
 			if !ok {
+				fmt.Println("called1")
 				return fmt.Errorf("property is not a string +%v", name)
 			}
 
 			instance, ok := object.(*CompiledInstanceObject)
 			if !ok {
+				fmt.Println("called2")
 				return fmt.Errorf("only instance have properties, got +%v", object)
 			}
+
+			fmt.Printf("%s value , %v Field", str.Value, instance.Fields[str.Value])
 
 			if value, ok := instance.Fields[str.Value]; ok {
 				vm.pop()
 				vm.push(value)
-				return nil
+				continue
 			}
 
 			if err := vm.bindMethod(instance, str.Value); err != nil {
@@ -360,7 +367,7 @@ func (vm *VM) run() error {
 			*ip -= int(offset)
 		}
 
-		fmt.Printf(", NewSp: %d, Stack: %s\n", vm.Sp, vm.printStack())
+		fmt.Printf(", NewSp: %d, BP: %d, Stack: %s\n", vm.Sp, frame.BasePointer, vm.printStack())
 	}
 }
 
@@ -406,20 +413,27 @@ func (vm *VM) bindMethod(instance *CompiledInstanceObject, methodName string) er
 	}
 }
 
-func (vm *VM) callBoundMethod(method *CompiledBoundMethod, numArgs int) error {
-	return vm.callFunction(method.Method, numArgs)
-}
-
 func (vm *VM) callClass(class *CompiledClassObject, numArgs int) error {
 	// check if the inti methods match
 	instance := &CompiledInstanceObject{Class: class, Fields: make(map[string]Object)}
-	vm.Stack[vm.Sp-numArgs-1] = instance
 
 	// Check if the class has an "init" method (constructor)
 	if initMethod, ok := class.Methods["init"]; ok {
-		return vm.callBoundMethod(&CompiledBoundMethod{Receiver: instance, Method: initMethod}, numArgs)
+		if initMethod.Function.NumParameters != numArgs {
+			return fmt.Errorf("wrong number of arguments: want=%d, got=%d", initMethod.Function.NumParameters, numArgs)
+		}
+
+		vm.Stack[vm.Sp-1-numArgs] = instance
+		err := vm.callBoundMethod(&CompiledBoundMethod{Receiver: instance, Method: initMethod}, numArgs)
+		if err != nil {
+			return err
+		}
+		vm.Stack[vm.Sp-1] = instance
+		// account for this need to pop it
+		return nil
 	}
 
+	vm.Stack[vm.Sp-1-numArgs] = instance
 	// If there is no constructor, just adjust the stack pointer
 	vm.Sp -= numArgs
 	return nil
@@ -447,6 +461,30 @@ func (vm *VM) callFunction(callee *Closure, numArgs int) error {
 
 	vm.pushFrame(frame)
 	vm.Sp = frame.BasePointer + function.NumLocals
+	fmt.Printf("\nElement at bp %v, Element at sp %v\n", vm.Stack[frame.BasePointer], vm.Stack[vm.Sp])
+	return nil
+}
+
+func (vm *VM) callBoundMethod(callee *CompiledBoundMethod, numArgs int) error {
+	closure := callee.Method
+	function := closure.Function
+
+	if numArgs != function.NumParameters {
+		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", function.NumParameters, numArgs)
+	}
+
+	frame := &CallFrame{
+		Closure:     closure,
+		Ip:          0,
+		BasePointer: vm.Sp - numArgs,
+	}
+
+	copy(vm.Stack[frame.BasePointer+1:], vm.Stack[frame.BasePointer:vm.Sp])
+	vm.Stack[frame.BasePointer] = callee.Receiver
+	vm.Sp = frame.BasePointer + function.NumLocals
+
+	vm.pushFrame(frame)
+	fmt.Printf("BP: %d | SP: %d | STACK: %v\n", frame.BasePointer, vm.Sp, vm.printStack())
 	return nil
 }
 

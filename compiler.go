@@ -122,9 +122,13 @@ func (c *Compiler) Compile(ast Node) error {
 			c.WriteChunk(OP_DEFINE_LOCAL, node.Token.Line, symbol.Index)
 		}
 
-		for _, method := range node.Methods {
+		for index, method := range node.Methods {
 			if err := c.CompileMethod(method, node.Name.Value); err != nil {
 				return err
+			}
+
+			if index != len(node.Methods)-1 {
+				c.WriteByte(byte(OP_POP))
 			}
 		}
 
@@ -146,10 +150,6 @@ func (c *Compiler) Compile(ast Node) error {
 
 		if err := c.Compile(node.Body); err != nil {
 			return err
-		}
-
-		if c.lastInstructionIsPop() {
-			c.removeLastPop()
 		}
 
 		if !c.lastInstructionIsReturn() {
@@ -473,16 +473,14 @@ func (c *Compiler) CompileMethod(method *MethodDeclaration, className string) er
 	methodName := c.MakeConstant(&StringObject{Value: method.Name.Value})
 	c.enterScope()
 
+	c.SymbolTable.Define("this")
+
 	for _, p := range method.Params {
 		c.SymbolTable.Define(p.Value)
 	}
 
 	if err := c.Compile(method.Body); err != nil {
 		return err
-	}
-
-	if c.lastInstructionIsPop() {
-		c.removeLastPop()
 	}
 
 	if !c.lastInstructionIsReturn() {
@@ -511,6 +509,7 @@ func (c *Compiler) CompileMethod(method *MethodDeclaration, className string) er
 	c.WriteChunk(OP_CLOSURE, method.Token.Line, fnIndex, len(upvalues))
 
 	c.WriteChunk(OP_METHOD, method.Token.Line, methodName)
+
 	return nil
 }
 
